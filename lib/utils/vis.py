@@ -25,6 +25,7 @@ def save_batch_image_with_joints(batch_image, batch_joints, batch_joints_vis,
     batch_joints_vis: [batch_size, num_joints, 1],
     }
     '''
+    batch_image = batch_image.clamp(0., 1.)
     grid = torchvision.utils.make_grid(batch_image, nrow, padding, True)
     ndarr = grid.mul(255).clamp(0, 255).byte().permute(1, 2, 0).cpu().numpy()
     ndarr = ndarr.copy()
@@ -48,8 +49,51 @@ def save_batch_image_with_joints(batch_image, batch_joints, batch_joints_vis,
                 if joint_vis[0]:
                     cv2.circle(ndarr, (int(joint[0]), int(joint[1])), 2, [255, 0, 0], 2)
             k = k + 1
-    cv2.imwrite(file_name, ndarr)
+    return ndarr.transpose(2, 0, 1)
+    #cv2.imwrite(file_name, ndarr)
 
+def draw_batch_image_with_skeleton(batch_image, batch_joints, batch_joints_vis,
+                                   file_name, nrow=8, padding=2):
+    '''
+    batch_image: [batch_size, channel, height, width]
+    batch_joints: [batch_size, num_joints, 3],
+    batch_joints_vis: [batch_size, num_joints, 1],
+    }
+    '''
+    batch_image = batch_image.clamp(0., 1.)
+    grid = torchvision.utils.make_grid(batch_image, nrow, padding, True)
+    ndarr = grid.mul(255).clamp(0, 255).byte().permute(1, 2, 0).cpu().numpy()
+    ndarr = ndarr.copy()
+
+    parents = [1, 2, 6, 6, 3, 4, 7, 8, 9, -1, 11, 12, 8, 8, 13, 14]
+    
+    nmaps = batch_image.size(0)
+    xmaps = min(nrow, nmaps)
+    ymaps = int(math.ceil(float(nmaps) / xmaps))
+    height = int(batch_image.size(2) + padding)
+    width = int(batch_image.size(3) + padding)
+    k = 0
+    for y in range(ymaps):
+        for x in range(xmaps):
+            if k >= nmaps:
+                break
+            joints = batch_joints[k]
+
+            for i in range(joints.shape[0]):
+                if parents[i] < 0:
+                    continue
+
+                curr_joint = (int(x * width + padding + joints[i, 0]),
+                              int(y * height + padding + joints[i, 1]))
+
+                prev_joint = (int(x * width + padding + joints[parents[i], 0]),
+                              int(y * height + padding + joints[parents[i], 1]))
+
+                cv2.line(ndarr, curr_joint, prev_joint, (0, 0, 255), 2)
+                cv2.circle(ndarr, curr_joint, 2, [255, 0, 0], 2)
+
+            k = k + 1
+    return ndarr.transpose(2, 0, 1)    
 
 def save_batch_heatmaps(batch_image, batch_heatmaps, file_name,
                         normalize=True):
@@ -60,9 +104,9 @@ def save_batch_heatmaps(batch_image, batch_heatmaps, file_name,
     '''
     if normalize:
         batch_image = batch_image.clone()
+        batch_image = batch_image.clamp(0., 1.)
         min = float(batch_image.min())
         max = float(batch_image.max())
-
         batch_image.add_(-min).div_(max - min + 1e-5)
 
     batch_size = batch_heatmaps.size(0)
@@ -113,8 +157,27 @@ def save_batch_heatmaps(batch_image, batch_heatmaps, file_name,
 
         grid_image[height_begin:height_end, 0:heatmap_width, :] = resized_image
 
-    cv2.imwrite(file_name, grid_image)
+    #cv2.imwrite(file_name, grid_image)
+    return grid_image.transpose(2, 0, 1)
 
+def get_debug_images(config, input, meta, target, joints_pred, output,
+                     prefix):
+    gt_joints = save_batch_image_with_joints(
+        input, meta['joints'], meta['joints_vis'],
+        '{}_gt.jpg'.format(prefix)
+    )
+    pred_joints = save_batch_image_with_joints(
+        input, joints_pred, meta['joints_vis'],
+        '{}_pred.jpg'.format(prefix)
+    )
+    gt_heatmap = save_batch_heatmaps(
+        input, target, '{}_hm_gt.jpg'.format(prefix)
+    )
+    pred_heatmap = save_batch_heatmaps(
+        input, output, '{}_hm_pred.jpg'.format(prefix)
+    )
+
+    return gt_joints, pred_joints, gt_heatmap, pred_heatmap
 
 def save_debug_images(config, input, meta, target, joints_pred, output,
                       prefix):

@@ -20,7 +20,7 @@ config = edict()
 config.OUTPUT_DIR = ''
 config.LOG_DIR = ''
 config.DATA_DIR = ''
-config.GPUS = '0'
+config.GPUS = '1'
 config.WORKERS = 4
 config.PRINT_FREQ = 20
 
@@ -62,8 +62,10 @@ config.LOSS.USE_TARGET_WEIGHT = True
 
 # DATASET related params
 config.DATASET = edict()
-config.DATASET.ROOT = ''
-config.DATASET.DATASET = 'mpii'
+config.DATASET.ROOT = '/NAS/data/mpii_human_pose_v1_u12_2/'
+config.DATASET.HDF5_PATH = '/NAS/data/alex/event_gan/generated_data/mpii/kitti_object_cycle-bigskip-radam.hdf5'
+config.DATASET.DATASET = 'event_mpii'
+config.DATASET.N_EVENTS_PER_WINDOW = 2000
 config.DATASET.TRAIN_SET = 'train'
 config.DATASET.TEST_SET = 'valid'
 config.DATASET.DATA_FORMAT = 'jpg'

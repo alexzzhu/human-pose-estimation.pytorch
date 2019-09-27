@@ -9,4 +9,6 @@ from __future__ import division
 from __future__ import print_function
 
 from .mpii import MPIIDataset as mpii
-from .coco import COCODataset as coco
+from .event_mpii import EventMPIIDataset as event_mpii
+from .DHP19Dataset import DHP19Dataset as dhp19
+#from .coco import COCODataset as coco

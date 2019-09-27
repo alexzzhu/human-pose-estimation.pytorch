@@ -12,6 +12,7 @@ import argparse
 import os
 import pprint
 import shutil
+import time
 
 import torch
 import torch.nn.parallel
@@ -99,9 +100,18 @@ def main():
         os.path.join(this_dir, '../lib/models', config.MODEL.NAME + '.py'),
         final_output_dir)
 
+    checkpoint = torch.load(config.MODEL.PRETRAINED)
+    begin_epoch = config.TRAIN.BEGIN_EPOCH
+    it = 0
+    step = 0
+    if 'epoch' in checkpoint:
+        begin_epoch = checkpoint['epoch']
+        it = checkpoint['iter']
+        step = checkpoint['step']
+    
     writer_dict = {
         'writer': SummaryWriter(log_dir=tb_log_dir),
-        'train_global_steps': 0,
+        'train_global_steps': step,
         'valid_global_steps': 0,
     }
 
@@ -109,7 +119,8 @@ def main():
                              3,
                              config.MODEL.IMAGE_SIZE[1],
                              config.MODEL.IMAGE_SIZE[0]))
-    writer_dict['writer'].add_graph(model, (dump_input, ), verbose=False)
+    
+    #writer_dict['writer'].add_graph(model, (dump_input, ))
 
     gpus = [int(i) for i in config.GPUS.split(',')]
     model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
@@ -120,34 +131,32 @@ def main():
     ).cuda()
 
     optimizer = get_optimizer(config, model)
-
+    
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR
     )
-
+    
     # Data loading code
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+    #normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+    #                                 std=[0.229, 0.224, 0.225])
     train_dataset = eval('dataset.'+config.DATASET.DATASET)(
         config,
         config.DATASET.ROOT,
         config.DATASET.TRAIN_SET,
+        config.DATASET.HDF5_PATH,
         True,
-        transforms.Compose([
-            transforms.ToTensor(),
-            normalize,
-        ])
+        transforms.ToTensor()
     )
-    valid_dataset = eval('dataset.'+config.DATASET.DATASET)(
-        config,
-        config.DATASET.ROOT,
-        config.DATASET.TEST_SET,
-        False,
-        transforms.Compose([
-            transforms.ToTensor(),
-            normalize,
-        ])
-    )
+    #valid_dataset = eval('dataset.'+config.DATASET.DATASET)(
+    #    config,
+    #    config.DATASET.ROOT,
+    #    config.DATASET.TEST_SET,
+    #    False,
+    #    transforms.Compose([
+    #        transforms.ToTensor(),
+    #        #normalize,
+    #    ])
+    #)
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -156,51 +165,87 @@ def main():
         num_workers=config.WORKERS,
         pin_memory=True
     )
-    valid_loader = torch.utils.data.DataLoader(
-        valid_dataset,
-        batch_size=config.TEST.BATCH_SIZE*len(gpus),
-        shuffle=False,
-        num_workers=config.WORKERS,
-        pin_memory=True
-    )
+    #valid_loader = torch.utils.data.DataLoader(
+    #    valid_dataset,
+    #    batch_size=config.TEST.BATCH_SIZE*len(gpus),
+    #    shuffle=False,
+    #    num_workers=config.WORKERS,
+    #    pin_memory=True
+    #)
 
     best_perf = 0.0
     best_model = False
+
+    save_checkpoint({
+        'epoch': begin_epoch,
+        'step': step,
+        'iter': it,
+        'model': get_model_name(config),
+        'state_dict': model.state_dict(),
+        #'perf': perf_indicator,
+        'optimizer': optimizer.state_dict(),
+    }, True, final_output_dir)
+
+    start_time = time.time()
+    
     for epoch in range(config.TRAIN.BEGIN_EPOCH, config.TRAIN.END_EPOCH):
         lr_scheduler.step()
-
+        if epoch < begin_epoch:
+            continue
+        print("Training!")
         # train for one epoch
-        train(config, train_loader, model, criterion, optimizer, epoch,
-              final_output_dir, tb_log_dir, writer_dict)
-
-
-        # evaluate on validation set
-        perf_indicator = validate(config, valid_loader, valid_dataset, model,
-                                  criterion, final_output_dir, tb_log_dir,
-                                  writer_dict)
-
-        if perf_indicator > best_perf:
-            best_perf = perf_indicator
-            best_model = True
-        else:
-            best_model = False
-
+        n_steps = train(config, train_loader, model, criterion, optimizer, epoch,
+                        final_output_dir, tb_log_dir, writer_dict, it, start_time)
+        best_model = True
         logger.info('=> saving checkpoint to {}'.format(final_output_dir))
-        save_checkpoint({
-            'epoch': epoch + 1,
-            'model': get_model_name(config),
-            'state_dict': model.state_dict(),
-            'perf': perf_indicator,
-            'optimizer': optimizer.state_dict(),
-        }, best_model, final_output_dir)
+        if n_steps > 0:
+            step += n_steps
+        else:
+            step += len(train_dataset)
 
+        # Return wasn't -1, and hadn't finished a full batch. Therefore, timed out.
+        if n_steps > 0 and n_steps + it < len(train_loader):
+            save_checkpoint({
+                'epoch': epoch,
+                'step': step,
+                'iter': n_steps,
+                'model': get_model_name(config),
+                'state_dict': model.state_dict(),
+                #'perf': perf_indicator,
+                'optimizer': optimizer.state_dict(),
+            }, best_model, final_output_dir)
+            return
+        else:
+            # Start new epoch.
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'step': step,
+                'iter': 0,
+                'model': get_model_name(config),
+                'state_dict': model.state_dict(),
+                #'perf': perf_indicator,
+                'optimizer': optimizer.state_dict(),
+            }, best_model, final_output_dir)
+            it = 0
+        # evaluate on validation set
+        #perf_indicator = validate(config, valid_loader, valid_dataset, model,
+        #                          criterion, final_output_dir, tb_log_dir,
+        #                          writer_dict)
+        #
+        #if perf_indicator > best_perf:
+        #    best_perf = perf_indicator
+        #    best_model = True
+        #else:
+        #    best_model = False
+        
+        
+    
     final_model_state_file = os.path.join(final_output_dir,
-                                          'final_state.pth.tar')
+                                          'final_model.pth.tar')
     logger.info('saving final model state to {}'.format(
         final_model_state_file))
     torch.save(model.module.state_dict(), final_model_state_file)
     writer_dict['writer'].close()
-
 
 if __name__ == '__main__':
     main()

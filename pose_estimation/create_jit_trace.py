@@ -133,34 +133,13 @@ def main():
     gpus = [int(i) for i in config.GPUS.split(',')]
     model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
 
-    # define loss function (criterion) and optimizer
-    criterion = JointsMSELoss(
-        use_target_weight=config.LOSS.USE_TARGET_WEIGHT
-    ).cuda()
+    model.eval()
+    
+    print("Creating jit trace.")
+    example_forward_input = torch.rand(1, 18, 260, 346)
+    traced_model_script = torch.jit.trace(model, example_forward_input)
 
-    # Data loading code
-    #normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-    #                                 std=[0.229, 0.224, 0.225])
-    valid_dataset = eval('dataset.'+config.DATASET.DATASET)(
-        config,
-        config.DATASET.ROOT,
-        config.DATASET.TEST_SET,
-        config.DATASET.HDF5_PATH,
-        False,
-        transforms.ToTensor()
-    )
-    valid_loader = torch.utils.data.DataLoader(
-        valid_dataset,
-        batch_size=config.TEST.BATCH_SIZE*len(gpus),
-        shuffle=False,
-        num_workers=config.WORKERS,
-        pin_memory=True
-    )
-
-    # evaluate on validation set
-    validate(config, valid_loader, valid_dataset, model, criterion,
-             final_output_dir, tb_log_dir)
-
+    traced_model_script.save(os.path.join('jit_traces', '{}.pt'.format(config.DATASET.TRAIN_SET)))
 
 if __name__ == '__main__':
     main()

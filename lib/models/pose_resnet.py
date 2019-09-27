@@ -149,7 +149,7 @@ class PoseResNet(nn.Module):
         self.deconv_with_bias = extra.DECONV_WITH_BIAS
 
         super(PoseResNet, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
+        self.conv1 = nn.Conv2d(18, 64, kernel_size=7, stride=2, padding=3,
                                bias=False)
         self.bn1 = nn.BatchNorm2d(64, momentum=BN_MOMENTUM)
         self.relu = nn.ReLU(inplace=True)
@@ -291,6 +291,9 @@ class PoseResNet(nn.Module):
             else:
                 raise RuntimeError(
                     'No state_dict found in checkpoint file {}'.format(pretrained))
+            if 'resnet50-19c8e357.pth' in pretrained:
+                nn.init.normal_(self.conv1.weight, std=0.001)
+                del state_dict['conv1.weight']
             self.load_state_dict(state_dict, strict=False)
         else:
             logger.error('=> imagenet pretrained model dose not exist')
