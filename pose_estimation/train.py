@@ -90,6 +90,10 @@ def main():
     torch.backends.cudnn.deterministic = config.CUDNN.DETERMINISTIC
     torch.backends.cudnn.enabled = config.CUDNN.ENABLED
 
+    config.MODEL.PRETRAINED = config.MODEL.PRETRAINED if os.path.exists(config.MODEL.PRETRAINED) \
+                              else 'models/pytorch/imagenet/resnet50-19c8e357.pth'
+    print("Loading pretrained model from {}".format(config.MODEL.PRETRAINED))
+    
     model = eval('models.'+config.MODEL.NAME+'.get_pose_net')(
         config, is_train=True
     )
@@ -158,9 +162,15 @@ def main():
     #    ])
     #)
 
+    sampler = None
+    if 'comb' in config.DATASET.DATASET:
+        train_dataset, sampler = train_dataset
+        config.TRAIN.SHUFFLE = False
+
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=config.TRAIN.BATCH_SIZE*len(gpus),
+        sampler=sampler,
         shuffle=config.TRAIN.SHUFFLE,
         num_workers=config.WORKERS,
         pin_memory=True
