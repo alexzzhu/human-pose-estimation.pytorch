@@ -22,13 +22,14 @@ from core.inference import get_final_preds, get_max_preds
 from utils.transforms import flip_back
 from utils.vis import get_debug_images, save_batch_image_with_joints, \
     draw_batch_image_with_skeleton
-
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
 
 def train(config, train_loader, model, criterion, optimizer, epoch,
-          output_dir, tb_log_dir, writer_dict, n_iters, start_time):
+          output_dir, tb_log_dir, writer_dict, n_iters, start_time,
+          gan_model=None):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -38,10 +39,13 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
     model.train()
 
     end = time.time()
-    for i, (input, target, target_weight, meta, image) in enumerate(train_loader):
+    for i, (input, target, target_weight, meta, image) \
+        in enumerate(tqdm(train_loader, desc="Epoch {}, iter: ".format(epoch))):
         # measure data loading time
         data_time.update(time.time() - end)
-
+        if gan_model is not None:
+            with torch.no_grad():
+                [input] = gan_model(input.cuda())
         # compute output
         output = model(input)
         target = target.cuda(non_blocking=True)
@@ -66,27 +70,27 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         end = time.time()
 
         if i % config.PRINT_FREQ == 0:
-            msg = 'Epoch: [{0}][{1}/{2}]\t' \
-                  'Time {batch_time.val:.3f}s ({batch_time.avg:.3f}s)\t' \
-                  'Speed {speed:.1f} samples/s\t' \
-                  'Data {data_time.val:.3f}s ({data_time.avg:.3f}s)\t' \
-                  'Loss {loss.val:.5f} ({loss.avg:.5f})\t' \
-                  'Accuracy {acc.val:.3f} ({acc.avg:.3f})'.format(
-                      epoch, i, len(train_loader), batch_time=batch_time,
-                      speed=input.size(0)/batch_time.val,
-                      data_time=data_time, loss=losses, acc=acc)
-            logger.info(msg)
+            #msg = 'Epoch: [{0}][{1}/{2}]\t' \
+            #      'Time {batch_time.val:.3f}s ({batch_time.avg:.3f}s)\t' \
+            #      'Speed {speed:.1f} samples/s\t' \
+            #      'Data {data_time.val:.3f}s ({data_time.avg:.3f}s)\t' \
+            #      'Loss {loss.val:.5f} ({loss.avg:.5f})\t' \
+            #      'Accuracy {acc.val:.3f} ({acc.avg:.3f})'.format(
+            #          epoch, i, len(train_loader), batch_time=batch_time,
+            #          speed=input.size(0)/batch_time.val,
+            #          data_time=data_time, loss=losses, acc=acc)
+            #logger.info(msg)
+            input = input.cpu()
 
             prefix = '{}_{}'.format(os.path.join(output_dir, 'train'), i)
-
             input_vis = torch.sum(input, dim=1, keepdim=True).clamp(0., 1.)
             zeros = torch.zeros(input_vis.shape)
             input_vis_rgb = torch.cat((zeros, zeros, input_vis), dim=1)
-
             input_vis_rgb = torch.where(input_vis > 0,
-                                         input_vis_rgb,
-                                         image)
-            
+                                        input_vis_rgb,
+                                        image)
+
+
             gt_joints, \
                 pred_joints, \
                 gt_heatmap, \
@@ -103,7 +107,7 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
             writer.add_image('train_gt_heatmaps', gt_heatmap, global_steps)
             writer.add_image('train_pred_heatmaps', pred_heatmap, global_steps)
             
-        writer_dict['train_global_steps'] = global_steps + 1
+        writer_dict['train_global_steps'] += 1
 
         if i + n_iters >= len(train_loader):
             return i+1

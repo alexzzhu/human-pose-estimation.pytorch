@@ -13,6 +13,7 @@ import os
 import pprint
 import shutil
 import time
+from tqdm import trange
 
 import torch
 import torch.nn.parallel
@@ -62,7 +63,11 @@ def parse_args():
     parser.add_argument('--workers',
                         help='num of dataloader workers',
                         type=int)
-
+    parser.add_argument('--event_gan_path',
+                        default='/NAS/home/event_gan')
+    parser.add_argument('--gan_model_path',
+                        default='/NAS/home/event_gan/logs/cycle-aux-bigskip-radam/checkpoints/2019_10_06-00_20_44.pt')
+    
     args = parser.parse_args()
 
     return args
@@ -74,6 +79,31 @@ def reset_config(config, args):
     if args.workers:
         config.WORKERS = args.workers
 
+def load_gan_model(event_gan_path, gan_model_path):
+    import sys
+    sys.path.append(event_gan_path)
+    from model import unet
+
+    model = unet.UNet(num_input_channels=2,
+                      num_output_channels=18,
+                      skip_type='concat',
+                      activation='relu',
+                      num_encoders=4,
+                      base_num_channels=32,
+                      num_residual_blocks=2,
+                      norm='BN',
+                      use_upsample_conv=True,
+                      with_activation=True,
+                      sn=True,
+                      multi=False)
+
+    print('=> loading GAN model from {}'.format(gan_model_path))
+    checkpoint = torch.load(gan_model_path)['gen']
+    model.load_state_dict(checkpoint)
+    model.cuda()
+    model.eval()
+
+    return model
 
 def main():
     args = parse_args()
@@ -119,6 +149,8 @@ def main():
         'valid_global_steps': 0,
     }
 
+    print("Starting training at epoch {}, step {}, iter {}".format(begin_epoch, step, it))
+    
     dump_input = torch.rand((config.TRAIN.BATCH_SIZE,
                              3,
                              config.MODEL.IMAGE_SIZE[1],
@@ -143,14 +175,28 @@ def main():
     # Data loading code
     #normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
     #                                 std=[0.229, 0.224, 0.225])
-    train_dataset = eval('dataset.'+config.DATASET.DATASET)(
-        config,
-        config.DATASET.ROOT,
-        config.DATASET.TRAIN_SET,
-        config.DATASET.HDF5_PATH,
-        True,
-        transforms.ToTensor()
-    )
+
+    if 'image' in config.DATASET.DATASET:
+        gan_model = load_gan_model(args.event_gan_path, args.gan_model_path)
+        train_dataset = eval('dataset.'+config.DATASET.DATASET)(
+            config,
+            config.DATASET.ROOT,
+            config.DATASET.TRAIN_SET,
+            True,
+            transforms.ToTensor()
+        )
+    else:
+        gan_model = None
+        train_dataset = eval('dataset.'+config.DATASET.DATASET)(
+            config,
+            config.DATASET.ROOT,
+            config.DATASET.TRAIN_SET,
+            config.DATASET.HDF5_PATH,
+            True,
+            transforms.ToTensor()
+        )
+
+        
     #valid_dataset = eval('dataset.'+config.DATASET.DATASET)(
     #    config,
     #    config.DATASET.ROOT,
@@ -198,20 +244,20 @@ def main():
 
     start_time = time.time()
     
-    for epoch in range(config.TRAIN.BEGIN_EPOCH, config.TRAIN.END_EPOCH):
+    for epoch in trange(begin_epoch, config.TRAIN.END_EPOCH, desc="Epochs: "):
         lr_scheduler.step()
         if epoch < begin_epoch:
             continue
         print("Training!")
         # train for one epoch
         n_steps = train(config, train_loader, model, criterion, optimizer, epoch,
-                        final_output_dir, tb_log_dir, writer_dict, it, start_time)
+                        final_output_dir, tb_log_dir, writer_dict, it, start_time, gan_model)
         best_model = True
         logger.info('=> saving checkpoint to {}'.format(final_output_dir))
         if n_steps > 0:
             step += n_steps
         else:
-            step += len(train_dataset)
+            step += len(train_loader)
 
         # Return wasn't -1, and hadn't finished a full batch. Therefore, timed out.
         if n_steps > 0 and n_steps + it < len(train_loader):

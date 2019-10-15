@@ -11,21 +11,22 @@ from __future__ import print_function
 from collections import OrderedDict
 import logging
 import os
+import random
 import json_tricks as json
 
 import numpy as np
 import cv2
 from scipy.io import loadmat, savemat
 
-from dataset.EventJointsDataset import EventJointsDataset
+from dataset.ImageJointsDataset import ImageJointsDataset
 
 
 logger = logging.getLogger(__name__)
 
 
-class EventMPIIDataset(EventJointsDataset):
-    def __init__(self, cfg, root, image_set, hdf5_path, is_train, transform=None):
-        super().__init__(cfg, root, image_set, hdf5_path, is_train, transform)
+class ImageMPIIDataset(ImageJointsDataset):
+    def __init__(self, cfg, root, image_set, is_train, transform=None):
+        super().__init__(cfg, root, image_set, is_train, transform)
 
         self.num_joints = 16
         #self.num_joints = 14
@@ -36,14 +37,19 @@ class EventMPIIDataset(EventJointsDataset):
 
         if is_train and cfg.DATASET.SELECT_DATA:
             self.db = self.select_data(self.db)
-            
+
+        if 'mpii' in root:
+            image_folder = 'sequences'
+        else:
+            image_folder = 'images'
+        self.imgpath = os.path.join(self.root, image_folder)
         logger.info('=> load {} samples'.format(len(self.db)))
 
     def _get_prev_next_images(self, idx):
-        ind = self.ids[idx]
-        skip_val = self.n_skip if self.n_skip > 0 and self.n_skip <= 2 else random.randint(1, 2)
-        curr_ind = self.views[int(ind), 2+skip_val]
-        prev_ind = self.views[int(ind), 2-skip_val]
+        skip_val = random.randint(1, 2)
+        curr_ind = self.views[int(idx), 2+skip_val]
+        prev_ind = self.views[int(idx), 2-skip_val]
+
         curr_path = os.path.join(self.imgpath, self.imgnames[curr_ind].decode('utf-8'))
         prev_path = os.path.join(self.imgpath, self.imgnames[prev_ind].decode('utf-8'))
         return prev_path, curr_path        
@@ -68,6 +74,8 @@ class EventMPIIDataset(EventJointsDataset):
         centers = anno['center'][indices]
         scales = anno['scale'][indices]
         parts = anno['part'][indices]
+        self.views = anno['views']
+        self.imgnames = anno['imgname']
         
         image_folder = 'sequences' if 'mpii' in self.image_set else 'images'
         
@@ -99,8 +107,6 @@ class EventMPIIDataset(EventJointsDataset):
                 joints_3d_vis[:, 0] = joints_vis[:]
                 joints_3d_vis[:, 1] = joints_vis[:]
             gt_db.append({
-                'curr_image_file': curr_image_file,
-                'prev_image_file': prev_image_file,
                 'center': c,
                 'scale': s,
                 'joints_3d': joints_3d,
