@@ -15,7 +15,7 @@ import numpy as np
 from utils.transforms import transform_preds
 
 
-def get_max_preds(batch_heatmaps):
+def get_max_preds(batch_heatmaps, thresh=0.2):
     '''
     get predictions from score maps
     heatmaps: numpy.ndarray([batch_size, num_joints, height, width])
@@ -39,7 +39,7 @@ def get_max_preds(batch_heatmaps):
     preds[:, :, 0] = (preds[:, :, 0]) % width
     preds[:, :, 1] = np.floor((preds[:, :, 1]) / width)
 
-    pred_mask = np.tile(np.greater(maxvals, 0.0), (1, 1, 2))
+    pred_mask = np.tile(np.greater(maxvals, thresh), (1, 1, 2))
     pred_mask = pred_mask.astype(np.float32)
 
     preds *= pred_mask
