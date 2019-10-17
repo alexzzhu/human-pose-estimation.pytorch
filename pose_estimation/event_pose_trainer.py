@@ -128,7 +128,7 @@ class EventPoseTrainer(pytorch_utils.BaseTrainer):
         self.cdl_kwargs["sampler"] = sampler
         self.cdl_kwargs["collate_fn"] = none_safe_collate
 
-    def gen_joint_vis(self, network_input, image, joints, joints_vis, pred, pred_mask):
+    def gen_joint_vis(self, network_input, image, joints, joints_vis, pred, pred_mask, dhp=False):
         input_vis = torch.sum(network_input, dim=1, keepdim=True).clamp(0., 1.)
         zeros = torch.zeros(input_vis.shape).cpu()
         input_vis_rgb = torch.cat((zeros, zeros, input_vis), dim=1)
@@ -138,12 +138,12 @@ class EventPoseTrainer(pytorch_utils.BaseTrainer):
         gt_joint_img, \
             pred_joint_img = get_debug_images(
                 input_vis_rgb, joints, joints_vis,
-                pred*4, pred_mask[..., 0:1])
+                pred*4, pred_mask[..., 0:1], dhp=dhp)
         
         return { 'gt_joints': gt_joint_img,
                  'pred_joints': pred_joint_img }
     
-    def forward_step(self, batch, train=True, gen_output=False):
+    def forward_step(self, batch, train=True, gen_output=False, dhp=False):
         network_input = batch['input']
         target = batch['target']
         target_weight = batch['target_weight']
@@ -168,7 +168,8 @@ class EventPoseTrainer(pytorch_utils.BaseTrainer):
         err = np.mean(np.linalg.norm(((pred*4. - joints) * mask), axis=-1).sum(axis=-1) \
                       / (np.sum(mask, axis=(-2, -1)) + 1e-5))
         if (self.step_count % self.options.summary_steps == 0 and train) or gen_output:
-            outputs = self.gen_joint_vis(network_input, image, joints, joints_vis, pred, pred_mask)
+            outputs = self.gen_joint_vis(network_input, image, joints, joints_vis, pred, pred_mask,
+                                         dhp=dhp)
         else:
             outputs = {}
             
@@ -185,7 +186,7 @@ class EventPoseTrainer(pytorch_utils.BaseTrainer):
 
         optimizer = self.optimizers_dict['optimizer']
 
-        losses, outputs = self.forward_step(input_batch)
+        losses, outputs = self.forward_step(input_batch, dhp='dhp' in self.options.name)
         # compute gradient and do update step
         optimizer.zero_grad()
         losses['loss'].backward()
@@ -211,7 +212,8 @@ class EventPoseTrainer(pytorch_utils.BaseTrainer):
             i = 0
             for step, batch in enumerate(tqdm(test_data_loader, desc='Validation: ')):
                 batch = {k: v.to(self.device) for k,v in batch.items() }
-                losses, outputs = self.forward_step(batch, train=False, gen_output=step==0)
+                losses, outputs = self.forward_step(batch, train=False, gen_output=step==0,
+                                                    dhp=True)
 
                 if step == 0:
                     final_outputs = outputs

@@ -66,7 +66,7 @@ def save_batch_image_with_joints(batch_image, batch_joints, batch_joints_vis, nr
     #cv2.imwrite(file_name, ndarr)
     
 def draw_batch_image_with_multi_skeleton(batch_image, batch_joints, batch_joints_vis,
-                                         file_name, nrow=8, padding=2, probs=None):
+                                         nrow=8, padding=2, probs=None, dhp=False):
     '''
     batch_image: [batch_size, channel, height, width]
     batch_joints: [batch_size, num_joints, 3],
@@ -78,7 +78,11 @@ def draw_batch_image_with_multi_skeleton(batch_image, batch_joints, batch_joints
     ndarr = grid.clamp(0, 255).byte().permute(1, 2, 0).cpu().numpy()
     ndarr = ndarr.copy()
 
-    parents = [1, 2, 6, 6, 3, 4, 7, 8, 9, -1, 11, 12, 8, 8, 13, 14]
+    if dhp:
+        parents = [1, 2, 12, 13, 3, 4, -1, -1, -1, -1, 11, 12, 9, 9, 13, 14]
+    else:
+        parents = [1, 2, 6, 6, 3, 4, 7, 8, 9, -1, 11, 12, 8, 8, 13, 14]
+
     ignore = []#0, 1, 2, 3, 4, 5]
 
     nmaps = batch_joints.shape[0]
@@ -98,6 +102,7 @@ def draw_batch_image_with_multi_skeleton(batch_image, batch_joints, batch_joints
 
                     color = 255
                     if probs is not None:
+                        import pdb;pdb.set_trace()
                         color = int(math.log(probs[k][i] * 255.) * 255. / math.log(255.))
                 
                     cv2.circle(ndarr, curr_joint, 2, [color, 0, 0], 2)
@@ -114,7 +119,7 @@ def draw_batch_image_with_multi_skeleton(batch_image, batch_joints, batch_joints
     return ndarr.transpose(2, 0, 1)    
     
 def draw_batch_image_with_skeleton(batch_image, batch_joints, batch_joints_vis,
-                                   file_name, nrow=8, padding=2, probs=None):
+                                   nrow=8, padding=2, probs=None, dhp=False):
     '''
     batch_image: [batch_size, channel, height, width]
     batch_joints: [batch_size, num_joints, 3],
@@ -125,8 +130,11 @@ def draw_batch_image_with_skeleton(batch_image, batch_joints, batch_joints_vis,
     grid = torchvision.utils.make_grid(batch_image, nrow, padding, True)
     ndarr = grid.mul(255).clamp(0, 255).byte().permute(1, 2, 0).cpu().numpy()
     ndarr = ndarr.copy()
-
-    parents = [1, 2, 6, 6, 3, 4, 7, 8, 9, -1, 11, 12, 8, 8, 13, 14]
+    
+    if dhp:
+        parents = [1, 2, 12, 13, 3, 4, -1, -1, -1, -1, 11, 12, 9, 9, 13, 14]
+    else:
+        parents = [1, 2, 6, 6, 3, 4, 7, 8, 9, -1, 11, 12, 8, 8, 13, 14]
     ignore = []#0, 1, 2, 3, 4, 5]
 
     nmaps = batch_joints.shape[0]
@@ -233,12 +241,12 @@ def save_batch_heatmaps(batch_image, batch_heatmaps, file_name,
     #cv2.imwrite(file_name, grid_image)
     return grid_image.transpose(2, 0, 1)
 
-def get_debug_images(input, joints, joints_vis, joints_pred, joints_pred_vis):
-    gt_joints = save_batch_image_with_joints(
-        input, joints, joints_vis
+def get_debug_images(input, joints, joints_vis, joints_pred, joints_pred_vis, dhp=False):
+    gt_joints = draw_batch_image_with_skeleton(
+        input, joints, joints_vis, dhp=dhp
     )
-    pred_joints = save_batch_image_with_joints(
-        input, joints_pred, joints_pred_vis
+    pred_joints = draw_batch_image_with_skeleton(
+        input, joints_pred, joints_pred_vis, dhp=dhp
     )
     #gt_heatmap = save_batch_heatmaps(
     #    input, target, '{}_hm_gt.jpg'.format(prefix)
