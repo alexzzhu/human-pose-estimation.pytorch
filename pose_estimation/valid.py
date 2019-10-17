@@ -141,13 +141,16 @@ def main():
     # Data loading code
     #normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
     #                                 std=[0.229, 0.224, 0.225])
-    valid_dataset = eval('dataset.'+config.DATASET.DATASET)(
+    valid_dataset = eval('dataset.dhp19')(#+config.DATASET.DATASET)(
         config,
-        config.DATASET.ROOT,
+        config.TEST.ROOT,
         config.DATASET.TEST_SET,
-        config.DATASET.HDF5_PATH,
+        config.TEST.HDF5_PATH,
         False,
-        transforms.ToTensor()
+        transforms.Compose([
+                transforms.ToTensor(),
+        ]),
+        full=True
     )
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,

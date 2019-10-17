@@ -61,8 +61,8 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         # measure accuracy and record loss
         losses.update(loss.item(), input.size(0))
 
-        _, avg_acc, cnt, pred = accuracy(output.detach().cpu().numpy(),
-                                         target.detach().cpu().numpy())
+        _, avg_acc, cnt, pred, pred_mask = accuracy(output.detach().cpu().numpy(),
+                                                    target.detach().cpu().numpy())
         acc.update(avg_acc, cnt)
 
         # measure elapsed time
@@ -117,10 +117,6 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
 
 def validate(config, val_loader, val_dataset, model, criterion, output_dir,
              tb_log_dir, writer_dict=None):
-    batch_time = AverageMeter()
-    losses = AverageMeter()
-    acc = AverageMeter()
-
     # switch to evaluate mode
     model.eval()
 
@@ -128,14 +124,23 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
     all_preds = np.zeros((num_samples, config.MODEL.NUM_JOINTS, 3),
                          dtype=np.float32)
     all_boxes = np.zeros((num_samples, 6))
+    sum_acc = 0.
+    sum_loss = 0.
+    sum_err = 0.
     image_path = []
     filenames = []
     imgnums = []
     idx = 0
+
+    joint_err_sums = np.zeros((config.MODEL.NUM_JOINTS, 2))
+    joint_abs_err_sums = np.zeros((config.MODEL.NUM_JOINTS, 2))
+    joint_err_sq_sums = np.zeros((config.MODEL.NUM_JOINTS, 2))
+    n_jt_sums = np.zeros((config.MODEL.NUM_JOINTS, 1))
+    
     with torch.no_grad():
-        end = time.time()
-        #for i, (input, target, target_weight, meta) in enumerate(val_loader):
-        for i, input in enumerate(val_loader):
+        for i, (input, target, target_weight, meta, image) \
+            in enumerate(tqdm(val_loader, desc="Validation: ")):
+        #for i, input in enumerate(val_loader):
             # compute output
             output = model(input)
             if config.TEST.FLIP_TEST:
@@ -155,26 +160,73 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                     # output_flipped[:, :, :, 0] = 0
 
                 output = (output + output_flipped) * 0.5
-            pred, _ = get_max_preds(output.detach().cpu().numpy())
+            target = target.cuda(non_blocking=True)
+            target_weight = target_weight.cuda(non_blocking=True)
+
+            loss = criterion(output, target, target_weight)
+            _, avg_acc, cnt, pred_jts, pred_mask = accuracy(output.cpu().numpy(),
+                                                 target.cpu().numpy())
+
+            gt_jts = meta['joints'].cpu().numpy()
+            gt_vis = meta['joints_vis'].cpu().numpy()
+            mask = gt_vis * pred_mask[..., 0:1]
+
+            joint_err_sums += np.sum((pred_jts*4. - gt_jts) * mask, axis=0)
+            joint_abs_err_sums += np.sum((np.abs(pred_jts*4. - gt_jts)) * mask, axis=0)
+            joint_err_sq_sums += np.sum(((pred_jts*4. - gt_jts) ** 2.) * mask, axis=0)
+            n_jt_sums += np.sum(mask, axis=0)
+          
+            err = np.sum(np.linalg.norm(((pred_jts*4. - gt_jts) * mask), axis=-1).sum(axis=-1) \
+                         / (np.sum(mask, axis=(-2, -1)) + 1e-5))
+            
+            sum_acc += avg_acc
+            sum_loss += loss
+            sum_err += err
             num_images = input.size(0)
-            # measure elapsed time
-            batch_time.update(time.time() - end)
-            end = time.time()
-
-            input_vis = input.sum(dim=1, keepdim=True).repeat(1, 3, 1, 1)
-            pred_joints = draw_batch_image_with_skeleton(
-                input_vis, pred*4, np.ones(pred.shape),
-                'DHP_pred.jpg'
-            )
-
-            pred_joints = pred_joints.transpose((1, 2, 0))
-
-            cv2.imwrite('images/{:04d}_pred.jpg'.format(i), pred_joints)
-
             idx += num_images
+            
+            if i == 0:
+                input_vis = torch.sum(input, dim=1, keepdim=True).clamp(0., 1.)
+                zeros = torch.zeros(input_vis.shape)
+                input_vis_rgb = torch.cat((zeros, zeros, input_vis), dim=1)
+                input_vis_rgb = torch.where(input_vis > 0,
+                                            input_vis_rgb,
+                                            image)
+                
+                gt_joints, \
+                    pred_joints, \
+                    gt_heatmap, \
+                    pred_heatmap = get_debug_images(
+                        config, input_vis_rgb, meta, target, pred_jts*4, output,
+                        'test')
 
+        print("Average validation accuracy: {}, err: {}, loss: {}".format(sum_acc / idx,
+                                                                          sum_err / idx,
+                                                                          sum_loss / idx))
+        mean_err = joint_err_sums / (n_jt_sums + 1e-5)
+        mean_abs_err = joint_abs_err_sums / (n_jt_sums + 1e-5)
+        mean_std = np.sqrt((joint_err_sq_sums - mean_err ** 2.) / (n_jt_sums + 1e-5))
 
-    return 0
+        np.set_printoptions(suppress=True,
+                            formatter={'float_kind':'{:0.2f}'.format})
+        
+        print("Mean error: ")
+        print(mean_err)
+        print("Mean abs error: ")
+        print(mean_abs_err)
+        print("Mean std: ")
+        print(mean_std)
+        
+        if writer_dict is not None:
+            writer = writer_dict['writer']
+            global_steps = writer_dict['train_global_steps']
+            writer.add_scalar('test/loss', sum_loss / idx, global_steps)
+            writer.add_scalar('test/acc', sum_acc / idx, global_steps)
+            writer.add_scalar('test/err', sum_err / idx, global_steps)
+            writer.add_image('test/gt_joints', gt_joints, global_steps)
+            writer.add_image('test/pred_joints', pred_joints, global_steps)
+        
+    return sum_acc / idx
 
 
 # markdown format output

@@ -1,6 +1,6 @@
 GPUS: '0'
 DATA_DIR: ''
-OUTPUT_DIR: 'output'
+OUTPUT_DIR: 'log'
 LOG_DIR: 'log'
 WORKERS: 8
 PRINT_FREQ: 100
@@ -9,24 +9,19 @@ CUDNN:
   DETERMINISTIC: False
   ENABLED: True
 DATASET:
-  DATASET: image_comb_mpii_h36m
-  ROOT:
-  - 'data/mpii/'
-  - 'data/h36m/'
+  DATASET: dhp19
+  ROOT: 'data/dhp19'
   TEST_SET: avg_test
-  TRAIN_SET:
-  - mpii_16_train_temporal
-  - h36m_temporal_16_train
-  HDF5_PATH:
-  - '/NAS/data/alex/event_gan/generated_data/mpii/mpii_skip2_cycle-bigskip-radam.hdf5'
-  - '/NAS/data/alex/event_gan/generated_data/h36m/h36m_cycle-bigskip-radam.hdf5'
-  N_EVENTS_PER_WINDOW: 2000
+  TRAIN_SET: training
+  HDF5_PATH: 'data/dhp19/dhp_gt.h5'
+  N_EVENTS_PER_WINDOW: 7500
   FLIP: true
   ROT_FACTOR: 30
   SCALE_FACTOR: 0.25
 MODEL:
   NAME: pose_resnet
-  PRETRAINED: 'output/image_comb_mpii_h36m/pose_resnet_50/image_comb_mpii_h36m/checkpoint.pth.tar'
+  PRETRAINED: 'log/dhp19/pose_resnet_50/dhp19/checkpoint.pth.tar'
+  BASE_PRETRAINED: ''
   IMAGE_SIZE:
   - 256
   - 256
@@ -48,11 +43,11 @@ MODEL:
     - 4
     - 4
     - 4
-    NUM_LAYERS: 50
+    NUM_LAYERS: 18
 LOSS:
   USE_TARGET_WEIGHT: true
 TRAIN:
-  BATCH_SIZE: 32
+  BATCH_SIZE: 64
   SHUFFLE: true
   BEGIN_EPOCH: 0
   END_EPOCH: 140
@@ -69,11 +64,9 @@ TRAIN:
   MOMENTUM: 0.9
   NESTEROV: false
 TEST:
-  ROOT: 'data/dhp19/'
   BATCH_SIZE: 128
   FLIP_TEST: false
-  HDF5_PATH: 'data/dhp19/dhp_gt.h5'
-  MODEL_FILE: 'output/image_comb_mpii_h36m/pose_resnet_50/image_comb_mpii_h36m/checkpoint.pth.tar'
+  MODEL_FILE: ''
 DEBUG:
   DEBUG: false
   SAVE_BATCH_IMAGES_GT: true

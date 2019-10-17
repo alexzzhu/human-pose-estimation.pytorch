@@ -41,9 +41,8 @@ def get_max_preds(batch_heatmaps, thresh=0.2):
 
     pred_mask = np.tile(np.greater(maxvals, thresh), (1, 1, 2))
     pred_mask = pred_mask.astype(np.float32)
-
-    preds *= pred_mask
-    return preds, maxvals
+    #preds *= pred_mask
+    return preds, pred_mask
 
 
 def get_final_preds(config, batch_heatmaps, center, scale):

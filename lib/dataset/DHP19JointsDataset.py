@@ -12,8 +12,8 @@ import copy
 import logging
 import random
 import h5py
-from skimage import exposure
 
+import os
 import cv2
 import numpy as np
 import torch
@@ -22,22 +22,35 @@ from torch.utils.data import Dataset
 from utils.transforms import get_affine_transform
 from utils.transforms import affine_transform
 from utils.transforms import fliplr_joints
-
+from utils.event_utils import gen_event_volume_np
 
 logger = logging.getLogger(__name__)
 
 
-class ImageJointsDataset(Dataset):
-    def __init__(self, cfg, root, image_set, is_train, transform=None):
-        self.num_joints = 0
+class DHP19JointsDataset(Dataset):
+    def __init__(self, cfg, root, image_set, hdf5_path, is_train, transform=None):
+        self.num_joints = 16
         self.pixel_std = 200
         self.flip_pairs = []
         self.parent_ids = []
 
         self.is_train = is_train
         self.root = root
-        self.image_set = image_set
+        self.hdf5_path = hdf5_path
 
+        self.split = 'avg' if 'avg' in image_set else 'raw'
+        imgsetpath = os.path.join(root, '{}.txt'.format(image_set))
+        with open(imgsetpath) as f:
+            self.image_ids = f.read().splitlines()
+
+        if is_train:
+            if 'train' in image_set:
+                self.image_ids = self.image_ids[::10]
+            else:
+                self.image_ids = self.image_ids[::100]
+        else:
+            self.image_ids = self.image_ids[::10]
+            
         self.output_path = cfg.OUTPUT_DIR
         self.data_format = cfg.DATASET.DATA_FORMAT
 
@@ -53,6 +66,9 @@ class ImageJointsDataset(Dataset):
         self.transform = transform
         self.db = []
 
+        self.load()
+        self.close()
+
     def _get_db(self):
         raise NotImplementedError
 
@@ -60,51 +76,75 @@ class ImageJointsDataset(Dataset):
         raise NotImplementedError
 
     def __len__(self,):
-        return len(self.db)
+        return len(self.image_ids)
 
-    def _get_prev_next_images(self, idx):
-        raise NotImplementedError
-    
+    def load(self):
+        self.sequence = h5py.File(self.hdf5_path, 'r')
+        self.loaded = True
+
+    def close(self):
+        self.sequence.close()
+        self.sequence = None
+        self.loaded = False
+
+    def _normalize_event_volume(self, event_volume):
+        event_volume_flat = event_volume.contiguous().view(-1)
+        nonzero = torch.nonzero(event_volume_flat)
+        nonzero_values = event_volume_flat[nonzero]
+        if nonzero_values.shape[0]:
+            lower = torch.kthvalue(nonzero_values,
+                                   max(int(0.02 * nonzero_values.shape[0]), 1),
+                                   dim=0)[0][0]
+            upper = torch.kthvalue(nonzero_values,
+                                   max(int(0.98 * nonzero_values.shape[0]), 1),
+                                   dim=0)[0][0]
+            max_val = max(abs(lower), upper)
+            event_volume = torch.clamp(event_volume, -max_val, max_val)
+            event_volume /= max_val
+        return event_volume
+
+    def _get_event_volume(self, data, idx):
+        all_events = data['events']
+        n_events = all_events.shape[0]
+        if self.split == 'avg':
+            event_ind = data['{}_inds'.format(self.split)][0, idx]
+        else:
+            event_ind = data['{}_inds'.format(self.split)][idx]
+        events = all_events[max(event_ind-3500, 0):min(event_ind+3500, n_events), :]
+        all_events = None
+        event_volume = gen_event_volume_np(events, (260, 346, 18))[0].astype(np.float32)
+        return event_volume
+        
+    def _get_label(self, data, idx):
+        c = data['{}_center'.format(self.split)][idx]
+        s = data['{}_scale'.format(self.split)][idx] * 1.5
+        joints = data['{}_part'.format(self.split)][idx].T
+        joints_vis = data['{}_mask'.format(self.split)][idx].T
+
+        return c, s, joints, joints_vis
+        
     def __getitem__(self, idx):
-        db_rec = copy.deepcopy(self.db[idx])
+        #if not self.loaded:
+        #    self.load()
 
-        prev_path, next_path = self._get_prev_next_images(idx)
-        filename = db_rec['filename'] if 'filename' in db_rec else ''
+        sequence = h5py.File(self.hdf5_path, 'r')
+            
+        image_id = self.image_ids[idx]
+        subj, sess, mov, cam, it = image_id.split(' ')
+        data = sequence[subj][sess][mov][cam]
+        data_numpy = self._get_event_volume(data, int(it))
+        c, s, joints, joints_vis = self._get_label(data, int(it))
+        data = None
+        sequence.close()
+        sequence = None
 
-        prev_image = cv2.imread(
-            prev_path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
-        next_image = cv2.imread(
-            next_path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
-
-        if next_image is None or prev_image is None:
-            logger.error('=> fail to read {} or {}'.format(prev_path, next_path))
-            raise ValueError('Fail to read {} or {}'.format(prev_path, next_path))
-        
-        orig_size = prev_image.shape[:2]
-        prev_image = cv2.resize(prev_image, tuple(self.image_size))
-        next_image = cv2.resize(next_image, tuple(self.image_size))
-
-        image_out = next_image.astype(np.float32)
-        
-        prev_image = cv2.cvtColor(prev_image, cv2.COLOR_BGR2GRAY)[..., np.newaxis]
-        next_image = cv2.cvtColor(next_image, cv2.COLOR_BGR2GRAY)[..., np.newaxis]
-        
-        data_numpy = np.concatenate((prev_image, next_image), axis=-1).astype(np.float32)
-
-        joints = db_rec['joints_3d']
-        joints_vis = db_rec['joints_3d_vis']
-
-        c = db_rec['center']
-        s = db_rec['scale']
-
+        orig_size = (260, 346)
         joint_scale = (np.array(data_numpy.shape[:2]) / np.array(orig_size))[::-1]
         joints[:, :2] = joints[:, :2] * joint_scale[np.newaxis, :]
 
         c = c * joint_scale
         s = s * joint_scale
-        score = db_rec['score'] if 'score' in db_rec else 1
         r = 0
-        shift = np.array((0, 0))
 
         if self.is_train:
             sf = self.scale_factor
@@ -112,75 +152,48 @@ class ImageJointsDataset(Dataset):
             s = s * np.clip(np.random.randn()*sf + 1, 1 - sf, 1 + sf)
             r = np.clip(np.random.randn()*rf, -rf*2, rf*2) \
                 if random.random() <= 0.6 else 0
-            shift = np.clip(np.random.randn(2) * 0.1, -0.1, 0.1)
-
+            
             if self.flip and random.random() <= 0.5:
                 data_numpy = data_numpy[:, ::-1, :]
-                image_out = image_out[:, ::-1, :]
                 joints, joints_vis = fliplr_joints(
                     joints, joints_vis, data_numpy.shape[1], self.flip_pairs)
                 c[0] = data_numpy.shape[1] - c[0] - 1
-            data_numpy /= 255.
-            image_out /= 255.
-            gamma = np.clip(np.random.randn() * 0.2, -0.2, 0.2) + 1.
-            data_numpy = exposure.adjust_gamma(data_numpy, gamma)
-            image_out = exposure.adjust_gamma(image_out, gamma)
-            data_numpy = np.clip(data_numpy, 0., 1.)
-            image_out = np.clip(image_out, 0., 1.)
 
-            data_numpy = 2. * (data_numpy - 0.5)
-            image_out = 2. * (image_out - 0.5)
-                
-        trans = get_affine_transform(c, s, r, self.image_size, shift)
-        data_numpy = cv2.warpAffine(
+        trans = get_affine_transform(c, s, r, self.image_size)
+
+        input = cv2.warpAffine(
             data_numpy,
             trans,
             (int(self.image_size[0]), int(self.image_size[1])),
             flags=cv2.INTER_LINEAR)
-        image_out = cv2.warpAffine(
-            image_out,
-            trans,
-            (int(self.image_size[0]), int(self.image_size[1])),
-            flags=cv2.INTER_LINEAR)
-        
+
         if self.transform:
-            data_numpy = self.transform(data_numpy)
-            image_out = self.transform(image_out)
+            input = self.transform(input)
+
+        input = self._normalize_event_volume(input)
         
         for i in range(self.num_joints):
             if joints_vis[i, 0] > 0.0:
-                joints[i, :2] = affine_transform(joints[i, 0:2], trans)
+                joints[i, 0:2] = affine_transform(joints[i, 0:2], trans)
 
         shift_vis = np.all(np.logical_and(joints[:, :2] >= 0,
                                                   joints[:, :2] < 256),
                            axis=1, keepdims=True)
         joints_vis[:, :2] = np.logical_and(joints_vis[:, :2], shift_vis)
+                
         target, target_weight = self.generate_target(joints, joints_vis)
 
         target = torch.from_numpy(target)
         target_weight = torch.from_numpy(target_weight)
 
-        meta = {
-            'filename': filename,
-            'imgnum': idx,
-            'joints': joints[:, :2],
-            'joints_vis': joints_vis[:, :1],
-            'center': c,
-            'scale': s,
-            'rotation': r,
-            'score': score,
-        }
-
-        output = { 'input' : data_numpy,
+        output = { 'input' : input,
                    'target' : target,
                    'target_weight' : target_weight,
-                   'image' : image_out,
-                   'joints' : joints[:, :2],
-                   'joints_vis' : joints_vis[:, :1] }
-        
-        #return data_numpy, target, target_weight, meta, image_out
+                   'image' : input.sum(dim=0, keepdim=True),
+                   'joints' : joints,
+                   'joints_vis' : joints_vis }
         return output
-
+    
     def select_data(self, db):
         db_selected = []
         for rec in db:

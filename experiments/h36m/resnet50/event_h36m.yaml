@@ -11,9 +11,11 @@ CUDNN:
 DATASET:
   DATASET: event_mpii
   ROOT: 'data/h36m/'
-  TEST_SET: valid
+  TEST_SET: avg_test
   TRAIN_SET: h36m_temporal_16_train
-  HDF5_PATH: '/NAS/data/alex/event_gan/generated_data/h36m/h36m_cycle-bigskip-radam.hdf5'
+  HDF5_PATH:
+  - '/NAS/data/alex/event_gan/generated_data/mpii/mpii_skip2_cycle-bigskip-radam.hdf5'
+  - '/NAS/data/alex/event_gan/generated_data/h36m/h36m_cycle-bigskip-radam.hdf5'
   N_EVENTS_PER_WINDOW: 2000
   FLIP: true
   ROT_FACTOR: 30
@@ -64,7 +66,9 @@ TRAIN:
   MOMENTUM: 0.9
   NESTEROV: false
 TEST:
-  BATCH_SIZE: 32
+  ROOT: 'data/dhp19/'
+  HDF5_PATH: 'data/dhp19/dhp_gt.h5'
+  BATCH_SIZE: 128
   FLIP_TEST: false
   MODEL_FILE: ''
 DEBUG:

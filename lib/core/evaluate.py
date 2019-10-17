@@ -48,7 +48,7 @@ def accuracy(output, target, hm_type='gaussian', thr=0.5):
     idx = list(range(output.shape[1]))
     norm = 1.0
     if hm_type == 'gaussian':
-        pred, _ = get_max_preds(output)
+        pred, pred_mask = get_max_preds(output)
         target, _ = get_max_preds(target)
         h = output.shape[2]
         w = output.shape[3]
@@ -68,4 +68,4 @@ def accuracy(output, target, hm_type='gaussian', thr=0.5):
     avg_acc = avg_acc / cnt if cnt != 0 else 0
     if cnt != 0:
         acc[0] = avg_acc
-    return acc, avg_acc, cnt, pred
+    return acc, avg_acc, cnt, pred, pred_mask

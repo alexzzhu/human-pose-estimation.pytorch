@@ -9,14 +9,10 @@ CUDNN:
   DETERMINISTIC: False
   ENABLED: True
 DATASET:
-  DATASET: image_comb_mpii_h36m
-  ROOT:
-  - 'data/mpii/'
-  - 'data/h36m/'
+  DATASET: image_mpii
+  ROOT: 'data/h36m/'
   TEST_SET: avg_test
-  TRAIN_SET:
-  - mpii_16_train_temporal
-  - h36m_temporal_16_train
+  TRAIN_SET: h36m_temporal_16_train
   HDF5_PATH:
   - '/NAS/data/alex/event_gan/generated_data/mpii/mpii_skip2_cycle-bigskip-radam.hdf5'
   - '/NAS/data/alex/event_gan/generated_data/h36m/h36m_cycle-bigskip-radam.hdf5'
@@ -26,7 +22,8 @@ DATASET:
   SCALE_FACTOR: 0.25
 MODEL:
   NAME: pose_resnet
-  PRETRAINED: 'output/image_comb_mpii_h36m/pose_resnet_50/image_comb_mpii_h36m/checkpoint.pth.tar'
+  #PRETRAINED: 'models/pytorch/imagenet/resnet50-19c8e357.pth'
+  PRETRAINED: 'output/event_mpii/pose_resnet_50/event_h36m/checkpoint.pth.tar'
   IMAGE_SIZE:
   - 256
   - 256
@@ -70,10 +67,10 @@ TRAIN:
   NESTEROV: false
 TEST:
   ROOT: 'data/dhp19/'
+  HDF5_PATH: 'data/dhp19/dhp_gt.h5'
   BATCH_SIZE: 128
   FLIP_TEST: false
-  HDF5_PATH: 'data/dhp19/dhp_gt.h5'
-  MODEL_FILE: 'output/image_comb_mpii_h36m/pose_resnet_50/image_comb_mpii_h36m/checkpoint.pth.tar'
+  MODEL_FILE: ''
 DEBUG:
   DEBUG: false
   SAVE_BATCH_IMAGES_GT: true

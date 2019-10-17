@@ -291,14 +291,20 @@ class PoseResNet(nn.Module):
             else:
                 raise RuntimeError(
                     'No state_dict found in checkpoint file {}'.format(pretrained))
-            if 'resnet50-19c8e357.pth' in pretrained:
+            if 'resnet' in pretrained:
                 nn.init.normal_(self.conv1.weight, std=0.001)
                 del state_dict['conv1.weight']
             self.load_state_dict(state_dict, strict=False)
         else:
-            logger.error('=> imagenet pretrained model dose not exist')
-            logger.error('=> please download it first')
-            raise ValueError('imagenet pretrained model does not exist')
+            for m in self.modules():
+                if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
+                    nn.init.kaiming_normal_(m.weight, 10.)
+                    #nn.init.normal_(m.weight, mean=0.0, std=1e-3)
+                    if m.bias is not None:
+                        nn.init.constant_(m.bias, 0)
+                elif isinstance(m, nn.BatchNorm2d):
+                    nn.init.constant_(m.weight, 1)
+                    nn.init.constant_(m.bias, 0)
 
 
 resnet_spec = {18: (BasicBlock, [2, 2, 2, 2]),
@@ -308,7 +314,7 @@ resnet_spec = {18: (BasicBlock, [2, 2, 2, 2]),
                152: (Bottleneck, [3, 8, 36, 3])}
 
 
-def get_pose_net(cfg, is_train, **kwargs):
+def get_pose_net(cfg, pretrained_model, is_train, **kwargs):
     num_layers = cfg.MODEL.EXTRA.NUM_LAYERS
     style = cfg.MODEL.STYLE
 
@@ -320,6 +326,6 @@ def get_pose_net(cfg, is_train, **kwargs):
     model = PoseResNet(block_class, layers, cfg, **kwargs)
 
     if is_train and cfg.MODEL.INIT_WEIGHTS:
-        model.init_weights(cfg.MODEL.PRETRAINED)
+        model.init_weights(pretrained_model)
 
     return model

@@ -74,6 +74,40 @@ def create_update(x, y, t, dt, p, vol_size):
 
     return inds, vals
 
+def calc_floor_ceil_delta_np(x):
+    x_fl = np.floor(x + 1e-8)
+    x_ce = np.ceil(x - 1e-8)
+    x_ce_fake = x_fl + 1
+
+    dx_ce = x - x_fl
+    dx_fl = x_ce_fake - x
+    return [x_fl.astype(np.int32), dx_fl], [x_ce.astype(np.int32), dx_ce]
+
+def gen_event_volume_np(events, size=(260, 346, 18)):
+    x = events[:, 0]
+    y = events[:, 1]
+
+    width = size[1]
+    height = size[0]
+
+    x = x.astype(np.int32)
+    y = y.astype(np.int32)
+    valid = np.logical_and(np.less(x, width), np.less(y, height))
+    x = x[valid]
+    y = y[valid]
+
+    t = events[valid, 2]
+    t_scaled = (t - t.min()) * (size[-1] // 2 - 1) / (t.max() - t.min())
+    t_scaled[events[valid, 3] <= 0] += size[-1] // 2
+
+    ts_fl, ts_ce = calc_floor_ceil_delta_np(t_scaled)
+
+    event_volume = np.zeros((height, width, size[-1]))
+    np.add.at(event_volume, (y, x, ts_fl[0]), ts_fl[1])
+    np.add.at(event_volume, (y, x, ts_ce[0]), ts_ce[1])
+
+    return event_volume[np.newaxis, ...]
+
 def gen_discretized_event_volume(events, vol_size):
     # volume is [t, x, y]
     # events are Nx4

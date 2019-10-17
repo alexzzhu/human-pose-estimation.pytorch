@@ -51,6 +51,7 @@ config.MODEL = edict()
 config.MODEL.NAME = 'pose_resnet'
 config.MODEL.INIT_WEIGHTS = True
 config.MODEL.PRETRAINED = ''
+config.MODEL.BASE_PRETRAINED = 'models/pytorch/imagenet/resnet50-19c8e357.pth'
 config.MODEL.NUM_JOINTS = 16
 config.MODEL.IMAGE_SIZE = [256, 256]  # width * height, ex: 192 * 256
 config.MODEL.EXTRA = MODEL_EXTRAS[config.MODEL.NAME]
@@ -106,6 +107,8 @@ config.TEST = edict()
 # size of images for each device
 config.TEST.BATCH_SIZE = 32
 # Test Model Epoch
+config.TEST.ROOT = 'data/dhp19'
+config.TEST.HDF5_PATH = 'data/dhp19/dhp_gt.h5'
 config.TEST.FLIP_TEST = False
 config.TEST.POST_PROCESS = True
 config.TEST.SHIFT_HEATMAP = True

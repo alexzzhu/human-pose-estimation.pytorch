@@ -120,12 +120,12 @@ def main():
     torch.backends.cudnn.deterministic = config.CUDNN.DETERMINISTIC
     torch.backends.cudnn.enabled = config.CUDNN.ENABLED
 
-    config.MODEL.PRETRAINED = config.MODEL.PRETRAINED if os.path.exists(config.MODEL.PRETRAINED) \
-                              else 'models/pytorch/imagenet/resnet50-19c8e357.pth'
-    print("Loading pretrained model from {}".format(config.MODEL.PRETRAINED))
+    pretrained_model = config.MODEL.PRETRAINED if os.path.exists(config.MODEL.PRETRAINED) \
+                       else config.MODEL.BASE_PRETRAINED
+    print("Loading pretrained model from {}".format(pretrained_model))
     
     model = eval('models.'+config.MODEL.NAME+'.get_pose_net')(
-        config, is_train=True
+        config, pretrained_model, is_train=True
     )
 
     # copy model file
@@ -134,11 +134,11 @@ def main():
         os.path.join(this_dir, '../lib/models', config.MODEL.NAME + '.py'),
         final_output_dir)
 
-    checkpoint = torch.load(config.MODEL.PRETRAINED)
+    checkpoint = torch.load(pretrained_model)
     begin_epoch = config.TRAIN.BEGIN_EPOCH
     it = 0
     step = 0
-    if 'epoch' in checkpoint:
+    if 'epoch' in checkpoint and os.path.exists(config.MODEL.PRETRAINED):
         begin_epoch = checkpoint['epoch']
         it = checkpoint['iter']
         step = checkpoint['step']
@@ -196,17 +196,19 @@ def main():
             transforms.ToTensor()
         )
 
-        
-    #valid_dataset = eval('dataset.'+config.DATASET.DATASET)(
-    #    config,
-    #    config.DATASET.ROOT,
-    #    config.DATASET.TEST_SET,
-    #    False,
-    #    transforms.Compose([
-    #        transforms.ToTensor(),
-    #        #normalize,
-    #    ])
-    #)
+
+    valid_dataset = None
+    if 'test' in config.DATASET.TEST_SET:
+        valid_dataset = eval('dataset.dhp19')(#+config.DATASET.DATASET)(
+            config,
+            config.TEST.ROOT,
+            config.DATASET.TEST_SET,
+            config.TEST.HDF5_PATH,
+            False,
+            transforms.Compose([
+                transforms.ToTensor(),
+            ])
+        )
 
     sampler = None
     if 'comb' in config.DATASET.DATASET:
@@ -221,13 +223,15 @@ def main():
         num_workers=config.WORKERS,
         pin_memory=True
     )
-    #valid_loader = torch.utils.data.DataLoader(
-    #    valid_dataset,
-    #    batch_size=config.TEST.BATCH_SIZE*len(gpus),
-    #    shuffle=False,
-    #    num_workers=config.WORKERS,
-    #    pin_memory=True
-    #)
+
+    if valid_dataset is not None:
+        valid_loader = torch.utils.data.DataLoader(
+            valid_dataset,
+            batch_size=config.TEST.BATCH_SIZE*len(gpus),
+            shuffle=False,
+            num_workers=config.WORKERS,
+            pin_memory=True
+        )
 
     best_perf = 0.0
     best_model = False
@@ -249,6 +253,7 @@ def main():
         if epoch < begin_epoch:
             continue
         print("Training!")
+        
         # train for one epoch
         n_steps = train(config, train_loader, model, criterion, optimizer, epoch,
                         final_output_dir, tb_log_dir, writer_dict, it, start_time, gan_model)
@@ -258,7 +263,7 @@ def main():
             step += n_steps
         else:
             step += len(train_loader)
-
+            
         # Return wasn't -1, and hadn't finished a full batch. Therefore, timed out.
         if n_steps > 0 and n_steps + it < len(train_loader):
             save_checkpoint({
@@ -283,18 +288,18 @@ def main():
                 'optimizer': optimizer.state_dict(),
             }, best_model, final_output_dir)
             it = 0
+
+        if valid_dataset is not None:
         # evaluate on validation set
-        #perf_indicator = validate(config, valid_loader, valid_dataset, model,
-        #                          criterion, final_output_dir, tb_log_dir,
-        #                          writer_dict)
-        #
-        #if perf_indicator > best_perf:
-        #    best_perf = perf_indicator
-        #    best_model = True
-        #else:
-        #    best_model = False
-        
-        
+            perf_indicator = validate(config, valid_loader, valid_dataset, model,
+                                      criterion, final_output_dir, tb_log_dir,
+                                      writer_dict)
+            
+            if perf_indicator > best_perf:
+                best_perf = perf_indicator
+                best_model = True
+            else:
+                best_model = False        
     
     final_model_state_file = os.path.join(final_output_dir,
                                           'final_model.pth.tar')

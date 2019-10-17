@@ -170,7 +170,15 @@ class EventJointsDataset(Dataset):
             'score': score,
         }
 
-        return input, target, target_weight, meta, image
+        output = { 'input' : input,
+                   'target' : target,
+                   'target_weight' : target_weight,
+                   'image' : image,
+                   'joints' : joints,
+                   'joints_vis' : joints_vis }
+        
+        #return input, target, target_weight, meta, image
+        return output
 
     def select_data(self, db):
         db_selected = []

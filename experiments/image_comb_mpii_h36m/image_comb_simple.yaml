@@ -25,8 +25,9 @@ DATASET:
   ROT_FACTOR: 30
   SCALE_FACTOR: 0.25
 MODEL:
-  NAME: pose_resnet
+  NAME: dhp_cnn
   PRETRAINED: 'output/image_comb_mpii_h36m/pose_resnet_50/image_comb_mpii_h36m/checkpoint.pth.tar'
+  BASE_PRETRAINED: ''
   IMAGE_SIZE:
   - 256
   - 256
@@ -48,11 +49,11 @@ MODEL:
     - 4
     - 4
     - 4
-    NUM_LAYERS: 50
+    NUM_LAYERS: 18
 LOSS:
   USE_TARGET_WEIGHT: true
 TRAIN:
-  BATCH_SIZE: 32
+  BATCH_SIZE: 64
   SHUFFLE: true
   BEGIN_EPOCH: 0
   END_EPOCH: 140
