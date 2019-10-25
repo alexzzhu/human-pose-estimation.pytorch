@@ -102,7 +102,6 @@ def draw_batch_image_with_multi_skeleton(batch_image, batch_joints, batch_joints
 
                     color = 255
                     if probs is not None:
-                        import pdb;pdb.set_trace()
                         color = int(math.log(probs[k][i] * 255.) * 255. / math.log(255.))
                 
                     cv2.circle(ndarr, curr_joint, 2, [color, 0, 0], 2)
@@ -114,7 +113,7 @@ def draw_batch_image_with_multi_skeleton(batch_image, batch_joints, batch_joints
                     prev_joint = (int(x * width + padding + joints[parents[i], 0]),
                                   int(y * height + padding + joints[parents[i], 1]))
                     
-                    cv2.line(ndarr, curr_joint, prev_joint, (0, 0, color), 2)
+                    cv2.line(ndarr, curr_joint, prev_joint, (color, color, color), 2)
                 
     return ndarr.transpose(2, 0, 1)    
     
@@ -138,8 +137,8 @@ def draw_batch_image_with_skeleton(batch_image, batch_joints, batch_joints_vis,
     ignore = []#0, 1, 2, 3, 4, 5]
 
     nmaps = batch_joints.shape[0]
-    xmaps = min(nrow, 1)
-    ymaps = int(math.ceil(float(1) / xmaps))
+    xmaps = min(nrow, nmaps)
+    ymaps = int(math.ceil(float(nmaps) / xmaps))
     height = int(batch_image.shape[2] + padding)
     width = int(batch_image.shape[3] + padding)
     k = 0
@@ -148,33 +147,120 @@ def draw_batch_image_with_skeleton(batch_image, batch_joints, batch_joints_vis,
             if k >= nmaps:
                 break
             joints = batch_joints[k]
-
+            joints_vis = batch_joints_vis[k]
             for i in range(joints.shape[0]):
-                if parents[i] < 0 or i in ignore:
+                if not joints_vis[0]:
                     continue
-
                 curr_joint = (int(x * width + padding + joints[i, 0]),
                               int(y * height + padding + joints[i, 1]))
-
-                prev_joint = (int(x * width + padding + joints[parents[i], 0]),
-                              int(y * height + padding + joints[parents[i], 1]))
 
                 color = 255
                 if probs is not None:
                     color = int(math.log(probs[k][i] * 255.) * 255. / math.log(255.))
                 
-                cv2.circle(ndarr, curr_joint, 2, [color, 0, 0], 2)
+                cv2.circle(ndarr, curr_joint, 2, (color, 0, 0), 2)
 
-                if (joints[i, 0] <= 0 and joints[i, 1] <= 0) or \
-                   (joints[parents[i], 0] <= 0 and joints[parents[i], 1] <= 0):
+                if (joints[i, 0] < 0 or joints[i, 1] < 0) or \
+                   (joints[i, 0] >= batch_image.shape[1] or \
+                    joints[i, 1] >= batch_image.shape[2]) or \
+                   parents[i] < 0 or not joints_vis[parents[i]] or \
+                   (joints[parents[i], 0] <= 0 or joints[parents[i], 1] <= 0) or \
+                   (joints[parents[i], 0] >= batch_image.shape[1] or \
+                    joints[parents[i], 1] >= batch_image.shape[2]):
                     continue
 
-                cv2.line(ndarr, curr_joint, prev_joint, (0, 0, color), 2)
+                prev_joint = (int(x * width + padding + joints[parents[i], 0]),
+                              int(y * height + padding + joints[parents[i], 1]))
+                
+                cv2.line(ndarr, curr_joint, prev_joint, (color, color, color), 2)
                 
 
             k = k + 1
 
+    return ndarr.transpose(2, 0, 1)
+
+def draw_batch_image_with_pred_gt_skeleton(batch_image, batch_joints, batch_joints_vis,
+                                           batch_joints_pred, batch_joints_vis_pred,
+                                           nrow=8, padding=2, probs=None, dhp=False):
+    '''
+    batch_image: [batch_size, channel, height, width]
+    batch_joints: [batch_size, num_joints, 3],
+    batch_joints_vis: [batch_size, num_joints, 1],
+    }
+    '''
+    batch_image = batch_image.clamp(0., 1.)
+    grid = torchvision.utils.make_grid(batch_image, nrow, padding, True)
+    ndarr = grid.mul(255).clamp(0, 255).byte().permute(1, 2, 0).cpu().numpy()
+    ndarr = ndarr.copy()
+    
+    if dhp:
+        parents = [1, 2, 12, 13, 3, 4, -1, -1, -1, -1, 11, 12, 9, 9, 13, 14]
+    else:
+        parents = [1, 2, 6, 6, 3, 4, 7, 8, 9, -1, 11, 12, 8, 8, 13, 14]
+    ignore = []#0, 1, 2, 3, 4, 5]
+
+    nmaps = batch_joints.shape[0]
+    xmaps = min(nrow, nmaps)
+    ymaps = int(math.ceil(float(nmaps) / xmaps))
+    height = int(batch_image.shape[2] + padding)
+    width = int(batch_image.shape[3] + padding)
+    k = 0
+    for y in range(ymaps):
+        for x in range(xmaps):
+            if k >= nmaps:
+                break
+            joints = batch_joints[k]
+            joints_vis = batch_joints_vis[k]
+            pred_joints = batch_joints_pred[k]
+            pred_joints_vis = batch_joints_vis_pred[k]
+            for i in range(joints.shape[0]):
+                if joints_vis[0]:
+                    curr_joint = (int(x * width + padding + joints[i, 0]),
+                                  int(y * height + padding + joints[i, 1]))
+
+                    color = 255
+                    if probs is not None:
+                        color = int(math.log(probs[k][i] * 255.) * 255. / math.log(255.))
+
+                    cv2.circle(ndarr, curr_joint, 2, (color, color, color), 2)
+
+                    if not((joints[i, 0] < 0 or joints[i, 1] < 0) or \
+                           (joints[i, 0] >= batch_image.shape[3] or \
+                            joints[i, 1] >= batch_image.shape[2]) or \
+                           parents[i] < 0 or not joints_vis[parents[i]] or \
+                           (joints[parents[i], 0] <= 0 or joints[parents[i], 1] <= 0) or \
+                           (joints[parents[i], 0] >= batch_image.shape[3] or \
+                            joints[parents[i], 1] >= batch_image.shape[2])):
+                        prev_joint = (int(x * width + padding + joints[parents[i], 0]),
+                                      int(y * height + padding + joints[parents[i], 1]))
+
+                        cv2.line(ndarr, curr_joint, prev_joint, (color, color, color), 2)
+                if pred_joints_vis[0]:
+                    curr_joint = (int(x * width + padding + pred_joints[i, 0]),
+                                  int(y * height + padding + pred_joints[i, 1]))
+
+                    color = 255
+                    if probs is not None:
+                        color = int(math.log(probs[k][i] * 255.) * 255. / math.log(255.))
+
+                    cv2.circle(ndarr, curr_joint, 2, (color, 0, 0), 2)
+
+                    if not((pred_joints[i, 0] < 0 or pred_joints[i, 1] < 0) or \
+                           (pred_joints[i, 0] >= batch_image.shape[3] or \
+                            pred_joints[i, 1] >= batch_image.shape[2]) or \
+                           parents[i] < 0 or not pred_joints_vis[parents[i]] or \
+                           (pred_joints[parents[i], 0] <= 0 or pred_joints[parents[i], 1] <= 0) or \
+                           (pred_joints[parents[i], 0] >= batch_image.shape[3] or \
+                            pred_joints[parents[i], 1] >= batch_image.shape[2])):
+                        prev_joint = (int(x * width + padding + pred_joints[parents[i], 0]),
+                                      int(y * height + padding + pred_joints[parents[i], 1]))
+
+                        cv2.line(ndarr, curr_joint, prev_joint, (color, 0, 0), 2)                
+
+            k = k + 1
+
     return ndarr.transpose(2, 0, 1)    
+
 
 def save_batch_heatmaps(batch_image, batch_heatmaps, file_name,
                         normalize=True):
@@ -242,12 +328,14 @@ def save_batch_heatmaps(batch_image, batch_heatmaps, file_name,
     return grid_image.transpose(2, 0, 1)
 
 def get_debug_images(input, joints, joints_vis, joints_pred, joints_pred_vis, dhp=False):
-    gt_joints = draw_batch_image_with_skeleton(
-        input, joints, joints_vis, dhp=dhp
-    )
-    pred_joints = draw_batch_image_with_skeleton(
-        input, joints_pred, joints_pred_vis, dhp=dhp
-    )
+    joint_image = draw_batch_image_with_pred_gt_skeleton(
+        input, joints, joints_vis, joints_pred, joints_pred_vis, dhp=dhp)
+    #gt_joints = draw_batch_image_with_skeleton(
+    #    input, joints, joints_vis, dhp=dhp
+    #)
+    #pred_joints = draw_batch_image_with_skeleton(
+    #    input, joints_pred, joints_pred_vis, dhp=dhp
+    #)
     #gt_heatmap = save_batch_heatmaps(
     #    input, target, '{}_hm_gt.jpg'.format(prefix)
     #)
@@ -255,7 +343,8 @@ def get_debug_images(input, joints, joints_vis, joints_pred, joints_pred_vis, dh
     #    input, output, '{}_hm_pred.jpg'.format(prefix)
     #)
 
-    return gt_joints, pred_joints#, gt_heatmap, pred_heatmap
+    #return gt_joints, pred_joints#, gt_heatmap, pred_heatmap
+    return joint_image
 
 def save_debug_images(config, input, meta, target, joints_pred, output,
                       prefix):

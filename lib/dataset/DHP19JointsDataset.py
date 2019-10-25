@@ -12,6 +12,7 @@ import copy
 import logging
 import random
 import h5py
+from collections import OrderedDict
 
 import os
 import cv2
@@ -28,11 +29,15 @@ logger = logging.getLogger(__name__)
 
 
 class DHP19JointsDataset(Dataset):
-    def __init__(self, cfg, root, image_set, hdf5_path, is_train, transform=None):
+    def __init__(self, cfg, root, image_set, hdf5_path, is_train, transform=None, full=False):
         self.num_joints = 16
         self.pixel_std = 200
         self.flip_pairs = []
         self.parent_ids = []
+        self.joints = ['ankleR', 'kneeR', 'hipR', 'hipL', 'kneeL', 'ankleL', 'none', 'none',
+                       'none', 'head', 'wristR', 'elbowR', 'shoulderR', 'shoulderL',
+                       'elbowL', 'wristL']
+        self.joints_to_id = { j : i for i, j in enumerate(self.joints) }
 
         self.is_train = is_train
         self.root = root
@@ -43,12 +48,12 @@ class DHP19JointsDataset(Dataset):
         with open(imgsetpath) as f:
             self.image_ids = f.read().splitlines()
 
-        if is_train:
+        if is_train and not full:
             if 'train' in image_set:
                 self.image_ids = self.image_ids[::10]
             else:
                 self.image_ids = self.image_ids[::100]
-        else:
+        elif not full:
             self.image_ids = self.image_ids[::10]
             
         self.output_path = cfg.OUTPUT_DIR
@@ -281,3 +286,84 @@ class DHP19JointsDataset(Dataset):
                         g[g_y[0]:g_y[1], g_x[0]:g_x[1]]
 
         return target, target_weight
+
+    # Joints are batch x n_jts x 2, gt_jts_vis is batch x n_jts
+    def evaluate(self, pred_jts, gt_jts, gt_jts_vis, pred_jts_vis=None):
+        if len(gt_jts_vis.shape) == 3:
+            gt_jts_vis = gt_jts_vis[..., 0]
+
+        valid_pts = np.logical_and(
+            np.all(gt_jts[:, self.joints_to_id['head'], :] != -1, axis=-1),
+            np.logical_and(np.all(gt_jts[:, self.joints_to_id['shoulderL'], :] != -1, axis=-1),
+                           np.all(gt_jts[:, self.joints_to_id['shoulderR'], :] != -1, axis=-1)))
+        pred_jts = pred_jts[valid_pts]
+        gt_jts = gt_jts[valid_pts]
+        gt_jts_vis = gt_jts_vis[valid_pts]
+        if pred_jts_vis is not None:
+            pred_jts_vis = pred_jts_vis[valid_pts]
+            
+        SC_BIAS = 0.6
+        threshold = 0.5
+
+        neck_pos = (gt_jts[:, self.joints_to_id['shoulderL']] + \
+                    gt_jts[:, self.joints_to_id['shoulderR']]) / 2.
+        headsizes = np.linalg.norm(gt_jts[:, self.joints_to_id['head']] - neck_pos,
+                                   axis=-1, keepdims=True)
+        headsizes *= SC_BIAS
+        
+        uv_error = pred_jts - gt_jts
+        uv_err = np.linalg.norm(uv_error, axis=-1)
+        #scale = np.multiply(headsizes, np.ones((len(uv_err), 1)))
+        scaled_uv_err = np.divide(uv_err, headsizes)
+        scaled_uv_err = np.multiply(scaled_uv_err, gt_jts_vis)
+        jnt_count = np.sum(gt_jts_vis, axis=0)
+        less_than_threshold = np.multiply((scaled_uv_err <= threshold),
+                                          gt_jts_vis)
+
+        PCKh = np.divide(100.*np.sum(less_than_threshold, axis=0), jnt_count+1e-8)
+
+        # save
+        rng = np.arange(0, 0.5+0.01, 0.01)
+        pckAll = np.zeros((len(rng), 16))
+
+        for r in range(len(rng)):
+            threshold = rng[r]
+            less_than_threshold = np.multiply(scaled_uv_err <= threshold,
+                                              gt_jts_vis)
+            pckAll[r, :] = np.divide(100.*np.sum(less_than_threshold, axis=0),
+                                     jnt_count+1e-8)
+
+        PCKh = np.ma.array(PCKh, mask=False)
+        PCKh.mask[6:9] = True
+
+        jnt_count = np.ma.array(jnt_count, mask=False)
+        jnt_count.mask[6:9] = True
+        jnt_ratio = jnt_count / np.sum(jnt_count).astype(np.float64)
+
+        lsho = self.joints_to_id['shoulderL']
+        rsho = self.joints_to_id['shoulderR']
+        lelb = self.joints_to_id['elbowR']
+        relb = self.joints_to_id['elbowR']
+        lwri = self.joints_to_id['wristL']
+        rwri = self.joints_to_id['wristR']
+        lhip = self.joints_to_id['hipL']
+        rhip = self.joints_to_id['hipR']
+        lkne = self.joints_to_id['kneeL']
+        rkne = self.joints_to_id['kneeR']
+        lank = self.joints_to_id['ankleL']
+        rank = self.joints_to_id['ankleR']
+        head = self.joints_to_id['head']
+        
+        name_value = [
+            ('Head', PCKh[head]),
+            ('Shoulder', 0.5 * (PCKh[lsho] + PCKh[rsho])),
+            ('Elbow', 0.5 * (PCKh[lelb] + PCKh[relb])),
+            ('Wrist', 0.5 * (PCKh[lwri] + PCKh[rwri])),
+            ('Hip', 0.5 * (PCKh[lhip] + PCKh[rhip])),
+            ('Knee', 0.5 * (PCKh[lkne] + PCKh[rkne])),
+            ('Ankle', 0.5 * (PCKh[lank] + PCKh[rank])),
+            ('Mean', np.sum(PCKh * jnt_ratio)),
+            ('Mean@0.1', np.sum(pckAll[11, :] * jnt_ratio))
+        ]
+        name_value = OrderedDict(name_value)
+        return name_value, name_value['Mean'], pckAll

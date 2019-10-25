@@ -12,6 +12,8 @@ options.parser.add_argument('--cfg',
                             type=str)
 options.parser.add_argument('--event_gan_path',
                             default='/NAS/home/event_gan')
+options.parser.add_argument('--fine_tune',
+                            action='store_true')
 options.parser.add_argument(
     '--gan_model_path',
     default='/NAS/home/event_gan/logs/cycle-aux-bigskip-radam/checkpoints/2019_10_06-00_20_44.pt')

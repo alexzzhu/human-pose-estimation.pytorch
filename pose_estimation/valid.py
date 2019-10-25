@@ -29,6 +29,8 @@ from core.loss import JointsMSELoss
 from core.function import validate
 from utils.utils import create_logger
 
+from pytorch_utils import CheckpointSaver
+
 import dataset
 import models
 
@@ -68,11 +70,8 @@ def parse_args():
     parser.add_argument('--post-process',
                         help='use post process',
                         action='store_true')
-    parser.add_argument('--shift-heatmap',
-                        help='shift heatmap',
-                        action='store_true')
-    parser.add_argument('--coco-bbox-file',
-                        help='coco detection bbox file',
+    parser.add_argument('--name',
+                        help='Name of job',
                         type=str)
 
     args = parser.parse_args()
@@ -91,13 +90,8 @@ def reset_config(config, args):
         config.TEST.FLIP_TEST = args.flip_test
     if args.post_process:
         config.TEST.POST_PROCESS = args.post_process
-    if args.shift_heatmap:
-        config.TEST.SHIFT_HEATMAP = args.shift_heatmap
     if args.model_file:
         config.TEST.MODEL_FILE = args.model_file
-    if args.coco_bbox_file:
-        config.TEST.COCO_BBOX_FILE = args.coco_bbox_file
-
 
 def main():
     args = parse_args()
@@ -115,24 +109,15 @@ def main():
     torch.backends.cudnn.enabled = config.CUDNN.ENABLED
 
     model = eval('models.'+config.MODEL.NAME+'.get_pose_net')(
-        config, is_train=False
+        config, config.TEST.MODEL_FILE, is_train=False
     )
 
-    model = torch.nn.DataParallel(model)
+    model = torch.nn.DataParallel(model).cuda()
+
+    save_dir = os.path.join('logs', args.name, 'checkpoints')
+    saver = CheckpointSaver(save_dir)
+    checkpoint = saver.load_checkpoint({'model' : model}, {})
     
-    if config.TEST.MODEL_FILE:
-        logger.info('=> loading model from {}'.format(config.TEST.MODEL_FILE))
-        checkpoint = torch.load(config.TEST.MODEL_FILE)
-        model.load_state_dict(checkpoint['state_dict'])
-    else:
-        model_state_file = os.path.join(final_output_dir,
-                                        'final_state.pth.tar')
-        logger.info('=> loading model from {}'.format(model_state_file))
-        model.load_state_dict(torch.load(model_state_file))
-
-    gpus = [int(i) for i in config.GPUS.split(',')]
-    model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
-
     # define loss function (criterion) and optimizer
     criterion = JointsMSELoss(
         use_target_weight=config.LOSS.USE_TARGET_WEIGHT
@@ -154,15 +139,14 @@ def main():
     )
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,
-        batch_size=config.TEST.BATCH_SIZE*len(gpus),
+        batch_size=config.TEST.BATCH_SIZE,
         shuffle=False,
         num_workers=config.WORKERS,
         pin_memory=True
     )
 
     # evaluate on validation set
-    validate(config, valid_loader, valid_dataset, model, criterion,
-             final_output_dir, tb_log_dir)
+    validate(config, valid_loader, valid_dataset, model, criterion, args.name)
 
 
 if __name__ == '__main__':

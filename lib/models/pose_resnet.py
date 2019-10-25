@@ -277,8 +277,12 @@ class PoseResNet(nn.Module):
             checkpoint = torch.load(pretrained)
             if isinstance(checkpoint, OrderedDict):
                 state_dict = checkpoint
-            elif isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
-                state_dict_old = checkpoint['state_dict']
+            elif isinstance(checkpoint, dict) and 'state_dict' in checkpoint \
+                 or 'model' in checkpoint:
+                if 'state_dict' in checkpoint:
+                    state_dict_old = checkpoint['state_dict']
+                elif 'model' in checkpoint:
+                    state_dict_old = checkpoint['model']
                 state_dict = OrderedDict()
                 # delete 'module.' because it is saved from DataParallel module
                 for key in state_dict_old.keys():
@@ -325,7 +329,7 @@ def get_pose_net(cfg, pretrained_model, is_train, **kwargs):
 
     model = PoseResNet(block_class, layers, cfg, **kwargs)
 
-    if is_train and cfg.MODEL.INIT_WEIGHTS:
+    if cfg.MODEL.INIT_WEIGHTS:
         model.init_weights(pretrained_model)
 
     return model

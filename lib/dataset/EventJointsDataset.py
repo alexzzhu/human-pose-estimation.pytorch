@@ -53,6 +53,8 @@ class EventJointsDataset(Dataset):
         self.transform = transform
         self.db = []
 
+        self.valid = None
+        
         self.load()
         self.close()
 
@@ -62,7 +64,7 @@ class EventJointsDataset(Dataset):
     def evaluate(self, cfg, preds, output_dir, *args, **kwargs):
         raise NotImplementedError
 
-    def __len__(self,):
+    def __len__(self):
         return len(self.db)
 
     def load(self):
@@ -70,6 +72,8 @@ class EventJointsDataset(Dataset):
 
         davis_cam = self.sequence['davis']
         self.events = davis_cam['events']
+        if 'valid' in davis_cam.keys():
+            self.valid = np.array(davis_cam['valid'])
 
         self.loaded = True
 
@@ -82,7 +86,10 @@ class EventJointsDataset(Dataset):
     def __getitem__(self, idx):
         if not self.loaded:
             self.load()
-            
+
+        if self.valid is not None and not self.valid[idx]:
+            while not self.valid[idx]:
+                idx = random.randint(0, len(self))
         db_rec = copy.deepcopy(self.db[idx])
 
         image_file = db_rec['image_file']
@@ -157,25 +164,13 @@ class EventJointsDataset(Dataset):
 
         target = torch.from_numpy(target)
         target_weight = torch.from_numpy(target_weight)
-
-        meta = {
-            'image': image_file,
-            'filename': filename,
-            'imgnum': idx,
-            'joints': joints,
-            'joints_vis': joints_vis,
-            'center': c,
-            'scale': s,
-            'rotation': r,
-            'score': score,
-        }
-
+        
         output = { 'input' : input,
                    'target' : target,
                    'target_weight' : target_weight,
                    'image' : image,
-                   'joints' : joints,
-                   'joints_vis' : joints_vis }
+                   'joints' : joints[:, :2],
+                   'joints_vis' : joints_vis[:, :1] }
         
         #return input, target, target_weight, meta, image
         return output

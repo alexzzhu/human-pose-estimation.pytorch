@@ -20,7 +20,7 @@ DATASET:
   SCALE_FACTOR: 0.25
 MODEL:
   NAME: pose_resnet
-  BASE_PRETRAINED: 'log/image_comb_mpii_h36m/pose_resnet_50/image_comb_mpii_h36m/checkpoint.pth.tar'
+  BASE_PRETRAINED: 'logs/image-comb/checkpoints/2019_10_18-23_25_37.pt'
   PRETRAINED: 'log/dhp19/pose_resnet_50/image_comb_dhp_fine/checkpoint.pth.tar'
   IMAGE_SIZE:
   - 256

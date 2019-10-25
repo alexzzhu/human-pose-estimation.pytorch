@@ -36,8 +36,8 @@ class EventMPIIDataset(EventJointsDataset):
 
         if is_train and cfg.DATASET.SELECT_DATA:
             self.db = self.select_data(self.db)
-            
-        logger.info('=> load {} samples'.format(len(self.db)))
+
+        print('=> loaded {} samples'.format(len(self.db)))
 
     def _get_prev_next_images(self, idx):
         ind = self.ids[idx]
@@ -71,7 +71,7 @@ class EventMPIIDataset(EventJointsDataset):
         
         image_folder = 'sequences' if 'mpii' in self.image_set else 'images'
         
-        for i in range(n_ima):
+        for i in range(n_ima):                
             image_file = os.path.join(self.root, image_folder,
                                       image_names[i].decode('UTF-8'))
 
@@ -99,8 +99,7 @@ class EventMPIIDataset(EventJointsDataset):
                 joints_3d_vis[:, 0] = joints_vis[:]
                 joints_3d_vis[:, 1] = joints_vis[:]
             gt_db.append({
-                'curr_image_file': curr_image_file,
-                'prev_image_file': prev_image_file,
+                'image_file': image_file,
                 'center': c,
                 'scale': s,
                 'joints_3d': joints_3d,

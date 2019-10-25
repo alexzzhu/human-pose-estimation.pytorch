@@ -75,13 +75,17 @@ class EventPoseTrainer(pytorch_utils.BaseTrainer):
             config, config.MODEL.BASE_PRETRAINED, is_train=True
         )
 
+        if self.options.fine_tune:
+            for m in self.model.modules():
+                m.requires_grad = False
+            for m in self.model.final_layer.modules():
+                m.requires_grad = True
+        
         self.model = torch.nn.DataParallel(self.model).cuda()
 
         self.models_dict = { 'model' : self.model }
-        self.criterion = JointsMSELoss(
-            use_target_weight=config.LOSS.USE_TARGET_WEIGHT
-        ).cuda()
-        
+        self.criterion = JointsMSELoss(use_target_weight=config.LOSS.USE_TARGET_WEIGHT).cuda()
+
         optimizer = get_optimizer(config, self.model)
         self.optimizers_dict = { 'optimizer' : optimizer }
 
@@ -122,7 +126,7 @@ class EventPoseTrainer(pytorch_utils.BaseTrainer):
         sampler = None
         if 'comb' in config.DATASET.DATASET:
             train_dataset, sampler = train_dataset
-            
+
         self.train_ds = train_dataset
         self.validation_ds = valid_dataset
         self.cdl_kwargs["sampler"] = sampler
@@ -135,13 +139,11 @@ class EventPoseTrainer(pytorch_utils.BaseTrainer):
         input_vis_rgb = torch.where(input_vis > 0,
                                     input_vis_rgb,
                                     image)
-        gt_joint_img, \
-            pred_joint_img = get_debug_images(
-                input_vis_rgb, joints, joints_vis,
-                pred*4, pred_mask[..., 0:1], dhp=dhp)
+        joint_img = get_debug_images(
+            input_vis_rgb, joints, joints_vis,
+            pred*4, pred_mask[..., 0:1], dhp=dhp)
         
-        return { 'gt_joints': gt_joint_img,
-                 'pred_joints': pred_joint_img }
+        return { 'joints': joint_img }
     
     def forward_step(self, batch, train=True, gen_output=False, dhp=False):
         network_input = batch['input']
@@ -182,7 +184,6 @@ class EventPoseTrainer(pytorch_utils.BaseTrainer):
     def train_step(self, input_batch):
         if not input_batch:
             return {}, {}
-
 
         optimizer = self.optimizers_dict['optimizer']
 
@@ -230,7 +231,6 @@ class EventPoseTrainer(pytorch_utils.BaseTrainer):
             self.models_dict[model].train()
         self.summaries(batch, cumulative_losses, final_outputs, mode="test")
 
-        
     def summaries(self, input_batch, losses, output, mode='train'):
         #nrow = 4
         self.summary_writer.add_scalar("{}/learning_rate".format(mode),
