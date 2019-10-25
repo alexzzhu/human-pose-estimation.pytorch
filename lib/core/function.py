@@ -140,6 +140,14 @@ def validate(config, val_loader, val_dataset, model, criterion, name):
     all_pred_vis = np.zeros((len(val_dataset), config.MODEL.NUM_JOINTS, 1))
     all_gt = np.zeros((len(val_dataset), config.MODEL.NUM_JOINTS, 2))
     all_gt_vis = np.zeros((len(val_dataset), config.MODEL.NUM_JOINTS, 1))
+    #all_joint_imgs = np.zeros((len(val_loader), 3, 4130, 2066))
+
+    result_folder = 'results/{}'.format(name)
+    if not os.path.exists(result_folder):
+        os.mkdir(result_folder)
+    image_folder = 'results/{}/images'.format(name)        
+    if not os.path.exists(image_folder):
+        os.mkdir(image_folder)
     
     with torch.no_grad():
         for i, input_batch \
@@ -185,9 +193,6 @@ def validate(config, val_loader, val_dataset, model, criterion, name):
                 = pred_mask[..., :1]
             all_gt[i * config.TEST.BATCH_SIZE:(i+1) * config.TEST.BATCH_SIZE] = gt_jts
             all_gt_vis[i * config.TEST.BATCH_SIZE:(i+1) * config.TEST.BATCH_SIZE] = gt_vis[..., :1]
-            #all_pred.append(pred_jts * 4.)
-            #all_gt.append(gt_jts)
-            #all_gt_vis.append(gt_vis)
             
             joint_err_sums += np.sum((pred_jts*4. - gt_jts) * mask, axis=0)
             joint_abs_err_sums += np.sum((np.abs(pred_jts*4. - gt_jts)) * mask, axis=0)
@@ -203,24 +208,22 @@ def validate(config, val_loader, val_dataset, model, criterion, name):
             num_images = input.size(0)
             idx += num_images
 
-            """
-            if i == 0:
-                input_vis = torch.sum(input, dim=1, keepdim=True).clamp(0., 1.)
-                zeros = torch.zeros(input_vis.shape)
-                input_vis_rgb = torch.cat((zeros, zeros, input_vis), dim=1)
-                input_vis_rgb = torch.where(input_vis > 0,
-                                            input_vis_rgb,
-                                            image)
-                
-                joint_imgs = get_debug_images(
-                    input_vis_rgb, gt_jts, gt_vis, pred_jts*4, pred_mask[..., 0:1], dhp=True)
-            """
-        #all_pred = np.concatenate(all_pred, axis=0)
-        #all_gt = np.concatenate(all_gt, axis=0)
-        #all_gt_vis = np.concatenate(all_gt_vis, axis=0)
+            input_vis = torch.sum(input, dim=1, keepdim=True).clamp(0., 1.)
+            zeros = torch.zeros(input_vis.shape)
+            input_vis_rgb = torch.cat((zeros, zeros, input_vis), dim=1)
+            input_vis_rgb = torch.where(input_vis > 0,
+                                        input_vis_rgb,
+                                        image)
+            
+            joint_imgs = get_debug_images(
+                input_vis_rgb, gt_jts, gt_vis, pred_jts*4, pred_mask[..., 0:1], dhp=True)
+
+            joint_imgs = joint_imgs.transpose(1, 2, 0)
+            cv2.imwrite(os.path.join(image_folder, '{:06d}.png'.format(i)), joint_imgs)
+        
         name_value, mean, pckall = val_dataset.evaluate(all_pred, all_gt, all_gt_vis)
 
-        np.savez('{}_results.npz'.format(name),
+        np.savez(os.path.join(result_folder, '{}_results.npz'.format(name)),
                  name_value=name_value, mean=mean, pckall=pckall,
                  all_pred=all_pred, all_pred_vis=all_pred_vis,
                  all_gt=all_gt, all_gt_vis=all_gt_vis)

@@ -301,6 +301,7 @@ class DHP19JointsDataset(Dataset):
         gt_jts_vis = gt_jts_vis[valid_pts]
         if pred_jts_vis is not None:
             pred_jts_vis = pred_jts_vis[valid_pts]
+            gt_jts_vis = np.logical_and(pred_jts_vis, gt_jts_vis)
             
         SC_BIAS = 0.6
         threshold = 0.5
