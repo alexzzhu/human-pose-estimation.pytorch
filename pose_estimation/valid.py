@@ -64,7 +64,7 @@ def parse_args():
     parser.add_argument('--use-detect-bbox',
                         help='use detect bbox',
                         action='store_true')
-    parser.add_argument('--flip-test',
+    parser.add_argument('--flip_test',
                         help='use flip test',
                         action='store_true')
     parser.add_argument('--post-process',

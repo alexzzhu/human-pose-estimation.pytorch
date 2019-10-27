@@ -23,7 +23,7 @@ from torch.utils.data import Dataset
 from utils.transforms import get_affine_transform
 from utils.transforms import affine_transform
 from utils.transforms import fliplr_joints
-from utils.event_utils import gen_event_volume_np
+from utils.event_utils import gen_event_volume_np, gen_event_images
 
 logger = logging.getLogger(__name__)
 
@@ -122,16 +122,14 @@ class DHP19JointsDataset(Dataset):
         
     def _get_label(self, data, idx):
         c = data['{}_center'.format(self.split)][idx]
-        s = data['{}_scale'.format(self.split)][idx] * 1.5
+        c = np.array((c[1], c[0]))
+        s = data['{}_scale'.format(self.split)][idx] * 1.25
         joints = data['{}_part'.format(self.split)][idx].T
         joints_vis = data['{}_mask'.format(self.split)][idx].T
-
+        
         return c, s, joints, joints_vis
         
     def __getitem__(self, idx):
-        #if not self.loaded:
-        #    self.load()
-
         sequence = h5py.File(self.hdf5_path, 'r')
             
         image_id = self.image_ids[idx]
@@ -176,6 +174,7 @@ class DHP19JointsDataset(Dataset):
             input = self.transform(input)
 
         input = self._normalize_event_volume(input)
+        image = gen_event_images(input, device='cpu')
         
         for i in range(self.num_joints):
             if joints_vis[i, 0] > 0.0:
@@ -194,7 +193,7 @@ class DHP19JointsDataset(Dataset):
         output = { 'input' : input,
                    'target' : target,
                    'target_weight' : target_weight,
-                   'image' : input.sum(dim=0, keepdim=True),
+                   'image' : image,
                    'joints' : joints,
                    'joints_vis' : joints_vis }
         return output

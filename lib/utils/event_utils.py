@@ -242,3 +242,20 @@ def scale_events(events, volume_size, device='cuda'):
     events = torch.reshape(events, (events.shape[0], -1, 4))
 
     return events
+
+def gen_event_images(event_volume, device="cuda"):
+    n_bins = int(event_volume.shape[0] / 2)
+    time_range = torch.tensor(np.linspace(0.1, 1, n_bins), dtype=torch.float32).to(device)
+    time_range = torch.reshape(time_range, (n_bins, 1, 1))
+    
+    pos_event_image = torch.sum(
+        event_volume[:n_bins, ...] * time_range / \
+        (torch.sum(event_volume[:n_bins, ...], dim=0, keepdim=True) + 1e-5),
+        dim=0, keepdim=True)
+    neg_event_image = torch.sum(
+        event_volume[n_bins:, ...] * time_range / \
+        (torch.sum(event_volume[n_bins:, ...], dim=0, keepdim=True) + 1e-5),
+        dim=0, keepdim=True)
+    
+    event_time_image =  (pos_event_image + neg_event_image) / 2.
+    return event_time_image

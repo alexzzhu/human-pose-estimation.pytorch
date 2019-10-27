@@ -11,7 +11,7 @@ CUDNN:
 DATASET:
   DATASET: dhp19
   ROOT: 'data/dhp19'
-  TEST_SET: avg_test
+  TEST_SET: sub_avg_test
   TRAIN_SET: training
   HDF5_PATH: 'data/dhp19/dhp_gt.h5'
   N_EVENTS_PER_WINDOW: 2000

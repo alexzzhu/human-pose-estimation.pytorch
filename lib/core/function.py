@@ -140,12 +140,14 @@ def validate(config, val_loader, val_dataset, model, criterion, name):
     all_pred_vis = np.zeros((len(val_dataset), config.MODEL.NUM_JOINTS, 1))
     all_gt = np.zeros((len(val_dataset), config.MODEL.NUM_JOINTS, 2))
     all_gt_vis = np.zeros((len(val_dataset), config.MODEL.NUM_JOINTS, 1))
-    #all_joint_imgs = np.zeros((len(val_loader), 3, 4130, 2066))
 
-    result_folder = 'results/{}'.format(name)
+    if config.TEST.FLIP_TEST:
+        result_folder = 'results/{}-flip'.format(name)
+    else:
+        result_folder = 'results/{}'.format(name)
     if not os.path.exists(result_folder):
         os.mkdir(result_folder)
-    image_folder = 'results/{}/images'.format(name)        
+    image_folder = os.path.join(result_folder, 'images'.format(name))
     if not os.path.exists(image_folder):
         os.mkdir(image_folder)
     
@@ -155,10 +157,9 @@ def validate(config, val_loader, val_dataset, model, criterion, name):
             input = input_batch['input']
             target = input_batch['target']
             target_weight = input_batch['target_weight']
-            image = input_batch['image']
+            image = input_batch['image'].cpu().numpy()
             joints = input_batch['joints']
             joints_vis = input_batch['joints_vis']
-            
             # compute output
             output = model(input)
             if config.TEST.FLIP_TEST:
@@ -208,18 +209,17 @@ def validate(config, val_loader, val_dataset, model, criterion, name):
             num_images = input.size(0)
             idx += num_images
 
-            input_vis = torch.sum(input, dim=1, keepdim=True).clamp(0., 1.)
-            zeros = torch.zeros(input_vis.shape)
-            input_vis_rgb = torch.cat((zeros, zeros, input_vis), dim=1)
-            input_vis_rgb = torch.where(input_vis > 0,
-                                        input_vis_rgb,
-                                        image)
-            
-            joint_imgs = get_debug_images(
-                input_vis_rgb, gt_jts, gt_vis, pred_jts*4, pred_mask[..., 0:1], dhp=True)
-
-            joint_imgs = joint_imgs.transpose(1, 2, 0)
-            cv2.imwrite(os.path.join(image_folder, '{:06d}.png'.format(i)), joint_imgs)
+            #input_vis_rgb = image.repeat(1, 3, 1, 1)
+            #
+            #joint_imgs = get_debug_images(
+            #    input_vis_rgb, gt_jts, gt_vis, pred_jts*4, pred_mask[..., 0:1], dhp=True)
+            #
+            #joint_imgs = joint_imgs.transpose(1, 2, 0)
+            #image *= 255.
+            #for it in range(image.shape[0]):
+            #    cv2.imwrite(os.path.join(image_folder, '{:06d}.png'
+            #                             .format(i*config.TEST.BATCH_SIZE+it)),
+            #                image[it].transpose((1, 2, 0)).astype(np.uint8))
         
         name_value, mean, pckall = val_dataset.evaluate(all_pred, all_gt, all_gt_vis)
 
