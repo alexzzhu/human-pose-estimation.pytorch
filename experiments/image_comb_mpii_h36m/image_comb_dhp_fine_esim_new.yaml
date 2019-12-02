@@ -14,13 +14,14 @@ DATASET:
   TEST_SET: sub_avg_test
   TRAIN_SET: training
   HDF5_PATH: 'data/dhp19/dhp_gt.h5'
-  N_EVENTS_PER_WINDOW: 7500
+  N_EVENTS_PER_WINDOW: 2000
   FLIP: true
   ROT_FACTOR: 30
   SCALE_FACTOR: 0.25
 MODEL:
   NAME: pose_resnet
-  PRETRAINED: 'log/dhp19/pose_resnet_50/dhp19/checkpoint.pth.tar'
+  BASE_PRETRAINED: 'logs/comb-esim-new/checkpoints/2019_11_02-08_19_31.pt'
+  PRETRAINED: 'log/dhp19/pose_resnet_50/image_comb_dhp_fine/checkpoint.pth.tar'
   IMAGE_SIZE:
   - 256
   - 256
@@ -49,10 +50,10 @@ TRAIN:
   BATCH_SIZE: 32
   SHUFFLE: true
   BEGIN_EPOCH: 0
-  END_EPOCH: 140
+  END_EPOCH: 30
   RESUME: false
   OPTIMIZER: adam
-  LR: 0.001
+  LR: 0.0005
   LR_FACTOR: 0.1
   LR_STEP:
   - 90
@@ -63,9 +64,11 @@ TRAIN:
   MOMENTUM: 0.9
   NESTEROV: false
 TEST:
+  ROOT: 'data/dhp19/'
   BATCH_SIZE: 128
   FLIP_TEST: false
-  MODEL_FILE: ''
+  HDF5_PATH: 'data/dhp19/dhp_gt.h5'
+  MODEL_FILE: 'log/dhp19/pose_resnet_50/image_comb_dhp_fine/checkpoint.pth.tar'
 DEBUG:
   DEBUG: false
   SAVE_BATCH_IMAGES_GT: true

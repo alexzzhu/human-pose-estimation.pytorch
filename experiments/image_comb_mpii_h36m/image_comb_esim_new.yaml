@@ -1,6 +1,6 @@
 GPUS: '0'
 DATA_DIR: ''
-OUTPUT_DIR: 'log'
+OUTPUT_DIR: 'output'
 LOG_DIR: 'log'
 WORKERS: 8
 PRINT_FREQ: 100
@@ -9,18 +9,24 @@ CUDNN:
   DETERMINISTIC: False
   ENABLED: True
 DATASET:
-  DATASET: dhp19
-  ROOT: 'data/dhp19'
+  DATASET: event_comb_mpii_h36m
+  ROOT:
+  - 'data/mpii/'
+  - 'data/h36m/'
   TEST_SET: sub_avg_test
-  TRAIN_SET: training
-  HDF5_PATH: 'data/dhp19/dhp_gt.h5'
-  N_EVENTS_PER_WINDOW: 7500
+  TRAIN_SET:
+  - mpii_16_train_temporal
+  - h36m_temporal_16_train
+  HDF5_PATH:
+  - '/NAS/data/events/mpii_esim_data_new.hdf5'
+  - '/NAS/data/events/h36m_esim_data_new.hdf5'
+  N_EVENTS_PER_WINDOW: 2000
   FLIP: true
   ROT_FACTOR: 30
   SCALE_FACTOR: 0.25
 MODEL:
   NAME: pose_resnet
-  PRETRAINED: 'log/dhp19/pose_resnet_50/dhp19/checkpoint.pth.tar'
+  PRETRAINED: 'output/image_comb_mpii_h36m/pose_resnet_50/image_comb_mpii_h36m/checkpoint.pth.tar'
   IMAGE_SIZE:
   - 256
   - 256
@@ -63,9 +69,11 @@ TRAIN:
   MOMENTUM: 0.9
   NESTEROV: false
 TEST:
+  ROOT: 'data/dhp19/'
   BATCH_SIZE: 128
   FLIP_TEST: false
-  MODEL_FILE: ''
+  HDF5_PATH: 'data/dhp19/dhp_gt.h5'
+  MODEL_FILE: 'logs/image-comb/checkpoints/2019_10_18-23_25_37.pt'
 DEBUG:
   DEBUG: false
   SAVE_BATCH_IMAGES_GT: true
